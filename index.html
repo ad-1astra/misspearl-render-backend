@@ -1,0 +1,1024 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Miss Pearl — Pearl AI Labs</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <style>
+
+    :root {
+      --grey-bg: #e8e8e8;
+      --grey-dark: #888;
+      --green: #0d3320;
+      --green-mid: #1a5c38;
+      --green-light: #2e8b57;
+      --orange: #f5630a;
+      --orange-light: #ff8c42;
+      --white: #f8f4ee;
+      --black: #0a0a0a;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      background: var(--grey-bg);
+      font-family: "Space Mono", monospace;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+    }
+
+    @media (max-width: 400px) {
+      body {
+        gap: 8px;
+        padding: 0 2px;
+      }
+      .character-stage {
+        width: 180px;
+        height: 180px;
+      }
+      #miss-pearl-svg {
+        width: 110px !important;
+        height: 110px !important;
+      }
+      .bubble {
+        max-width: 98vw;
+        font-size: 11px;
+        padding: 8px 8px;
+        min-height: 28px;
+      }
+      .chat-panel {
+        width: 98vw;
+        min-width: 0;
+        max-width: 100vw;
+        border-radius: 10px;
+      }
+      .chat-messages {
+        padding: 7px;
+        font-size: 11px;
+        max-height: 120px;
+      }
+      .chat-input-row input {
+        font-size: 11px;
+        padding: 6px 8px;
+      }
+      .chat-send-btn {
+        width: 28px;
+        height: 28px;
+        font-size: 12px;
+      }
+      .controls {
+        gap: 4px;
+      }
+      .btn {
+        font-size: 10px;
+        padding: 7px 10px;
+      }
+      .volbars {
+        height: 18px;
+      }
+      .lab-logo {
+        font-size: 9px;
+        letter-spacing: 2px;
+      }
+    }
+
+    /* ── LOGO ── */
+    .lab-logo {
+      font-family: "Syne", sans-serif;
+      font-weight: 800;
+      font-size: 11px;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: var(--green);
+      opacity: 0.6;
+    }
+
+    /* ── STAGE ── */
+    .face-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .character-stage {
+      position: relative;
+      width: 360px;
+      height: 360px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #visualizer-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+
+    /* ── SVG CHARACTER ── */
+    #miss-pearl-svg {
+      width: 240px; height: 240px;
+      overflow: visible;
+      filter: drop-shadow(0 8px 24px rgba(0,0,0,0.12));
+      position: relative; z-index: 1;
+    }
+
+    /* ── SPEECH BUBBLE ── */
+    .bubble {
+      max-width: 340px;
+      background: white;
+      border-radius: 16px;
+      padding: 14px 20px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #333;
+      text-align: center;
+      position: relative;
+      min-height: 44px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+    .bubble::after {
+      content: "";
+      position: absolute;
+      top: -8px; left: 50%;
+      transform: translateX(-50%);
+      border: 8px solid transparent;
+      border-bottom-color: white;
+      border-top: none;
+    }
+
+    /* ── CHAT PANEL ── */
+    .chat-panel {
+      width: 360px;
+      background: white;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      display: none;
+      flex-direction: column;
+      max-height: 300px;
+    }
+    .chat-panel.open { display: flex; }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 240px;
+    }
+    .chat-messages::-webkit-scrollbar { width: 3px; }
+    .chat-messages::-webkit-scrollbar-thumb { background: #ddd; border-radius: 2px; }
+
+    .chat-msg {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      animation: fadeUp 0.25s ease both;
+    }
+    @keyframes fadeUp {
+      from { opacity:0; transform:translateY(6px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
+    .chat-msg.user { flex-direction: row-reverse; }
+
+    .chat-msg-icon {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: #f0f0f0;
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.6rem; color: #888;
+      font-family: "Space Mono", monospace;
+      overflow: hidden;
+    }
+
+    .chat-bubble-text {
+      max-width: 75%;
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .chat-msg.pearl .chat-bubble-text {
+      background: #f5f0e8;
+      border-left: 3px solid var(--orange);
+      color: #333;
+    }
+    .chat-msg.user .chat-bubble-text {
+      background: var(--green);
+      color: white;
+      border-right: 3px solid var(--green-mid);
+    }
+
+    .chat-input-row {
+      display: flex;
+      border-top: 1px solid #eee;
+      padding: 8px;
+      gap: 6px;
+    }
+    .chat-input-row input {
+      flex: 1;
+      border: 1px solid #ddd;
+      border-radius: 20px;
+      padding: 8px 14px;
+      font-family: "Space Mono", monospace;
+      font-size: 11px;
+      outline: none;
+    }
+    .chat-input-row input:focus { border-color: var(--orange); }
+    .chat-send-btn {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      border: none;
+      background: var(--orange);
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+      display: flex; align-items: center; justify-content: center;
+      transition: transform 0.15s;
+    }
+    .chat-send-btn:hover { transform: scale(1.1); }
+
+    /* ── CONTROLS ── */
+    .controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .btn {
+      font-family: "Space Mono", monospace;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      padding: 11px 22px;
+      border: 2px solid var(--orange);
+      background: transparent;
+      color: var(--orange);
+      border-radius: 50px;
+      cursor: pointer;
+      transition: all 0.18s;
+      white-space: nowrap;
+    }
+    .btn:hover, .btn.active { background: var(--orange); color: white; }
+    .btn.active { animation: pulseBtn 1s ease-in-out infinite; }
+    .btn.green-btn {
+      border-color: var(--green);
+      color: var(--green);
+    }
+    .btn.green-btn:hover, .btn.green-btn.on { background: var(--green); color: white; }
+    @keyframes pulseBtn {
+      0%,100% { box-shadow: 0 0 0 0 rgba(245,99,10,0.4); }
+      50%      { box-shadow: 0 0 0 10px rgba(245,99,10,0); }
+    }
+
+    .volbars {
+      display: flex; gap: 3px;
+      align-items: flex-end; height: 28px;
+    }
+    .vb {
+      width: 4px; background: var(--orange);
+      border-radius: 2px; transition: height 0.07s;
+      opacity: 0.2; min-height: 4px;
+    }
+
+    .status {
+      font-size: 10px;
+      letter-spacing: 3px;
+      color: var(--grey-dark);
+      opacity: 0.65;
+      text-transform: uppercase;
+      text-align: center;
+    }
+
+    /* typing dots */
+    .dots span {
+      animation: dot-blink 1.2s infinite;
+      opacity: 0;
+    }
+    .dots span:nth-child(2) { animation-delay: 0.2s; }
+    .dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes dot-blink {
+      0%,80%,100% { opacity: 0; }
+      40%          { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="lab-logo">Pearl AI Labs &nbsp;·&nbsp; Kampala, Uganda</div>
+
+<!-- ── CHARACTER STAGE ── -->
+<div class="face-wrap">
+  <div class="character-stage" id="characterStage">
+    <canvas id="visualizer-canvas" width="360" height="360"></canvas>
+
+    <svg id="miss-pearl-svg" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg" style="cursor:pointer;">
+      // ── Enable chat panel on AI card tap ──
+      document.getElementById("characterStage").addEventListener("click", function() {
+        if (!chatPanelOpen) toggleChat();
+        document.getElementById("chatInput").focus();
+      });
+      <!-- Face base -->
+      <circle cx="110" cy="110" r="100" fill="#F8F4EE" stroke="#0A0A0A" stroke-width="3"/>
+      <!-- Eyes -->
+      <ellipse id="eyeWhiteL" cx="80"  cy="95" rx="20" ry="22" fill="white" stroke="#0A0A0A" stroke-width="2.5"/>
+      <ellipse id="eyeWhiteR" cx="140" cy="95" rx="20" ry="22" fill="white" stroke="#0A0A0A" stroke-width="2.5"/>
+      <circle id="pupilL" cx="82"  cy="100" r="10" fill="#0A0A0A"/>
+      <circle id="pupilR" cx="142" cy="100" r="10" fill="#0A0A0A"/>
+      <circle id="shineL" cx="86"  cy="95"  r="3.5" fill="white"/>
+      <circle id="shineR" cx="146" cy="95"  r="3.5" fill="white"/>
+      <!-- Eyelids (for blink) -->
+      <ellipse id="lidL" cx="80"  cy="95" rx="21" ry="0" fill="#F8F4EE"/>
+      <ellipse id="lidR" cx="140" cy="95" rx="21" ry="0" fill="#F8F4EE"/>
+      <!-- Lashes L -->
+      <g id="lashL">
+        <line x1="63" y1="78" x2="58" y2="68" stroke="#0A0A0A" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="70" y1="74" x2="67" y2="64" stroke="#0A0A0A" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="78" y1="72" x2="78" y2="62" stroke="#0A0A0A" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="86" y1="74" x2="89" y2="64" stroke="#0A0A0A" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="94" y1="78" x2="99" y2="68" stroke="#0A0A0A" stroke-width="2.5" stroke-linecap="round"/>
+      </g>
+      <!-- Lashes R -->
+      <g id="lashR">
+        <line x1="123" y1="78" x2="118" y2="68" stroke="#0A0A0A" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="130" y1="74" x2="128" y2="64" stroke="#0A0A0A" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="138" y1="72" x2="138" y2="62" stroke="#0A0A0A" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="146" y1="74" x2="149" y2="64" stroke="#0A0A0A" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="154" y1="78" x2="159" y2="68" stroke="#0A0A0A" stroke-width="2.5" stroke-linecap="round"/>
+      </g>
+      <!-- Cheeks -->
+      <ellipse id="cheekL" cx="55"  cy="120" rx="18" ry="12" fill="#F5A0A0" opacity="0.3"/>
+      <ellipse id="cheekR" cx="165" cy="120" rx="18" ry="12" fill="#F5A0A0" opacity="0.3"/>
+      <!-- Mouth group (centred at 110,145) -->
+      <g id="mouthGroup" transform="translate(110,145)">
+        <path id="mouthFill" d="M-18,0 Q0,8 18,0" fill="none"/>
+        <ellipse id="tongue"   cx="0" cy="6" rx="8" ry="0" fill="#C0304A"/>
+        <path id="teethTop"   d="M0,0 L0,0 Z" fill="white"/>
+        <path id="upperLip"   d="M-20,0 Q0,10 20,0" stroke="#0A0A0A" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+        <path id="lowerLip"   d="M-20,0 Q0,0  20,0" stroke="none"    fill="none"/>
+      </g>
+    </svg>
+  </div>
+
+  <!-- Speech bubble -->
+  <div class="bubble" id="bubble">
+    Hey sugar! Press <strong style="color:var(--orange)">Listen</strong> or
+    <strong style="color:var(--green)">Chat</strong> to get started!
+  </div>
+
+  <!-- Chat panel -->
+  <div class="chat-panel" id="chatPanel">
+    <div class="chat-messages" id="chatMessages"></div>
+    <div class="chat-input-row">
+      <input type="text" id="chatInput"
+             placeholder="Say something to Miss Pearl…"
+             onkeydown="handleChatKey(event)" />
+      <button class="chat-send-btn" onclick="sendChatMessage()">&#10148;</button>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <button class="btn"           id="listenBtn" onclick="toggleListen()">🎙 Listen</button>
+    <button class="btn green-btn" id="chatBtn"   onclick="toggleChat()">💬 Chat</button>
+    <div class="volbars" id="volbars"></div>
+  </div>
+  <div class="status" id="status">ready</div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<script>
+"use strict";
+
+// ── Vol bars ────────────────────────────────────────────────
+const volbarsEl = document.getElementById("volbars");
+const NUM_BARS  = 10;
+const bars      = [];
+for (let i = 0; i < NUM_BARS; i++) {
+  const b = document.createElement("div");
+  b.className = "vb";
+  b.style.height = "4px";
+  volbarsEl.appendChild(b);
+  bars.push(b);
+}
+
+// ── Visualizer canvas ───────────────────────────────────────
+const vizCanvas  = document.getElementById("visualizer-canvas");
+const vizCtx     = vizCanvas.getContext("2d");
+const VIZ_BARS   = 64;
+const vizSmooth  = new Float32Array(VIZ_BARS);
+
+function drawVisualizer(freqData) {
+  const W = vizCanvas.width, H = vizCanvas.height;
+  const cx = W/2, cy = H/2, innerR = 110, maxBarH = 55;
+  vizCtx.clearRect(0, 0, W, H);
+  for (let i = 0; i < VIZ_BARS; i++) {
+    const dataIdx = freqData
+      ? Math.floor((i / VIZ_BARS) * freqData.length * 0.6)
+      : 0;
+    const raw = freqData ? freqData[dataIdx] / 255 : 0;
+    vizSmooth[i] = vizSmooth[i] * 0.65 + raw * 0.35;
+    const val   = vizSmooth[i];
+    const angle = (i / VIZ_BARS) * Math.PI * 2 - Math.PI / 2;
+    const barH  = Math.max(3, val * maxBarH);
+    const x1 = cx + Math.cos(angle) * innerR;
+    const y1 = cy + Math.sin(angle) * innerR;
+    const x2 = cx + Math.cos(angle) * (innerR + barH);
+    const y2 = cy + Math.sin(angle) * (innerR + barH);
+    const alpha = 0.35 + val * 0.65;
+    vizCtx.strokeStyle = (i % 2 === 0)
+      ? `rgba(13,51,32,${alpha})`
+      : `rgba(245,99,10,${alpha})`;
+    vizCtx.lineWidth = 2.5;
+    vizCtx.lineCap   = "round";
+    vizCtx.beginPath();
+    vizCtx.moveTo(x1, y1);
+    vizCtx.lineTo(x2, y2);
+    vizCtx.stroke();
+  }
+}
+drawVisualizer(null);
+
+// ── SVG element refs ─────────────────────────────────────────
+const lidL       = document.getElementById("lidL");
+const lidR       = document.getElementById("lidR");
+const pupilL     = document.getElementById("pupilL");
+const pupilR     = document.getElementById("pupilR");
+const shineL     = document.getElementById("shineL");
+const shineR     = document.getElementById("shineR");
+const eyeWhiteL  = document.getElementById("eyeWhiteL");
+const eyeWhiteR  = document.getElementById("eyeWhiteR");
+const mouthFill  = document.getElementById("mouthFill");
+const upperLip   = document.getElementById("upperLip");
+const teethTop   = document.getElementById("teethTop");
+const tongue     = document.getElementById("tongue");
+const lowerLip   = document.getElementById("lowerLip");
+const cheekL     = document.getElementById("cheekL");
+const cheekR     = document.getElementById("cheekR");
+const bubble     = document.getElementById("bubble");
+const statusEl   = document.getElementById("status");
+const listenBtn  = document.getElementById("listenBtn");
+const svg        = document.getElementById("miss-pearl-svg");
+
+// ── Eye constants ────────────────────────────────────────────
+const EYE_L_CX=80, EYE_L_CY=95;
+const PUPIL_L_CX=82, PUPIL_L_CY=100;
+const PUPIL_R_CX=142, PUPIL_R_CY=100;
+const SHINE_L_CX=86, SHINE_L_CY=95;
+const SHINE_R_CX=146, SHINE_R_CY=95;
+const PUPIL_RANGE_X=8, PUPIL_RANGE_Y=6;
+const EYE_RY_DEFAULT=22;
+
+let eyeState    = "idle";
+let eyeTargetX  = 0, eyeTargetY  = 0;
+let eyeCurrentX = 0, eyeCurrentY = 0;
+
+function setPupils(nx, ny) {
+  const px = Math.max(-1, Math.min(1, nx));
+  const py = Math.max(-1, Math.min(1, ny));
+  const lx = PUPIL_L_CX + px * PUPIL_RANGE_X;
+  const ly = PUPIL_L_CY + py * PUPIL_RANGE_Y;
+  const rx = PUPIL_R_CX + px * PUPIL_RANGE_X;
+  const ry = PUPIL_R_CY + py * PUPIL_RANGE_Y;
+  pupilL.setAttribute("cx", lx); pupilL.setAttribute("cy", ly);
+  pupilR.setAttribute("cx", rx); pupilR.setAttribute("cy", ry);
+  shineL.setAttribute("cx", lx + 4); shineL.setAttribute("cy", ly - 5);
+  shineR.setAttribute("cx", rx + 4); shineR.setAttribute("cy", ry - 5);
+}
+
+function setEyeOpen(scale) {
+  const ry = EYE_RY_DEFAULT * Math.max(0.7, Math.min(1.25, scale));
+  eyeWhiteL.setAttribute("ry", ry);
+  eyeWhiteR.setAttribute("ry", ry);
+}
+
+function setCheekBlush(intensity) {
+  const op = 0.25 + intensity * 0.35;
+  const rx = 18 + intensity * 4;
+  const ry = 12 + intensity * 3;
+  cheekL.setAttribute("opacity", op); cheekR.setAttribute("opacity", op);
+  cheekL.setAttribute("rx", rx);     cheekR.setAttribute("rx", rx);
+  cheekL.setAttribute("ry", ry);     cheekR.setAttribute("ry", ry);
+}
+
+// Smooth eye movement loop — HARD TRACKING
+(function animateEyes() {
+  eyeCurrentX += (eyeTargetX - eyeCurrentX) * 0.55;
+  eyeCurrentY += (eyeTargetY - eyeCurrentY) * 0.55;
+  setPupils(eyeCurrentX, eyeCurrentY);
+  requestAnimationFrame(animateEyes);
+})();
+
+// Mouse tracking — HARD TRACKING (faster, wider range)
+document.addEventListener("mousemove", e => {
+  if (eyeState === "thinking") return;
+  const rect = svg.getBoundingClientRect();
+  const dx = (e.clientX - (rect.left + rect.width  / 2)) / (rect.width  / 2);
+  const dy = (e.clientY - (rect.top  + rect.height / 2)) / (rect.height / 2);
+  eyeTargetX = Math.max(-1, Math.min(1, dx * 0.95));
+  eyeTargetY = Math.max(-1, Math.min(1, dy * 0.85));
+});
+
+// Eye state helpers
+function startSpeakEyes()     { eyeState = "speaking";  setEyeOpen(1.05); setCheekBlush(0.5); }
+function stopSpeakEyes()      { setEyeOpen(1); setCheekBlush(0); }
+function setEyeExpression(v)  { if (eyeState !== "speaking") return; setEyeOpen(1 + v * 0.2); setCheekBlush(0.3 + v * 0.7); }
+function startThinkingEyes()  { eyeState = "thinking";  eyeTargetX = -0.35; eyeTargetY = -0.6; setEyeOpen(1.1); }
+function startListeningEyes() { eyeState = "listening"; setEyeOpen(1.08); setCheekBlush(0.2); }
+function resetEyesToIdle()    { stopSpeakEyes(); eyeState = "idle"; setEyeOpen(1); setCheekBlush(0); }
+
+// Blink loop
+(function doBlink() {
+  lidL.setAttribute("ry", "23"); lidR.setAttribute("ry", "23");
+  setTimeout(() => { lidL.setAttribute("ry", "0"); lidR.setAttribute("ry", "0"); }, 120);
+  const interval = eyeState === "speaking"  ? 1800 + Math.random() * 1500
+                 : eyeState === "listening" ? 2200 + Math.random() * 2500
+                 :                            2500 + Math.random() * 3000;
+  setTimeout(doBlink, interval);
+})();
+
+// Idle bob
+let bobT = 0;
+(function bobIdle() {
+  bobT += 0.025;
+  svg.style.transform = `translateY(${Math.sin(bobT) * 5}px)`;
+  requestAnimationFrame(bobIdle);
+})();
+
+// ── Lip sync ────────────────────────────────────────────────
+let prevVol = 0;
+
+function setMouth(vol) {
+  vol = prevVol * 0.3 + vol * 0.7;
+  prevVol = vol;
+
+  if (vol < 0.05) {
+    // Neutral smile
+    upperLip.setAttribute("d", "M-20,0 Q0,10 20,0");
+    mouthFill.setAttribute("d", "M-18,0 Q0,8 18,0");
+    mouthFill.setAttribute("fill", "none");
+    lowerLip.setAttribute("stroke", "none");
+    teethTop.setAttribute("d", "M0,0 L0,0 Z");
+    tongue.setAttribute("ry", "0");
+  } else if (vol < 0.2) {
+    const t = (vol - 0.05) / 0.15, gap = 2 + t * 3;
+    upperLip.setAttribute("d", `M-18,0 Q0,${3 + t*2} 18,0`);
+    mouthFill.setAttribute("d", `M-14,0 Q0,${gap} 14,0`);
+    mouthFill.setAttribute("fill", "#0A0A0A");
+    lowerLip.setAttribute("d", `M-18,${gap-1} Q0,${gap+2+t*2} 18,${gap-1}`);
+    lowerLip.setAttribute("stroke", "#0A0A0A"); lowerLip.setAttribute("stroke-width", "2");
+    teethTop.setAttribute("d", "M0,0 L0,0 Z"); tongue.setAttribute("ry", "0");
+  } else if (vol < 0.45) {
+    const t = (vol - 0.2) / 0.25, w = 14 + t*4, h = 5 + t*7, tH = 1.5 + t*2;
+    upperLip.setAttribute("d", `M-${w+2},0 Q0,-${1+t} ${w+2},0`);
+    mouthFill.setAttribute("d", `M-${w},1 Q0,${h+1} ${w},1`);
+    mouthFill.setAttribute("fill", "#0A0A0A");
+    teethTop.setAttribute("d", `M-${w-2},1 L-${w-2},${1+tH} Q0,${tH+2} ${w-2},${1+tH} L${w-2},1 Z`);
+    lowerLip.setAttribute("d", `M-${w+2},${h-2} Q0,${h+4+t*3} ${w+2},${h-2}`);
+    lowerLip.setAttribute("stroke", "#0A0A0A"); lowerLip.setAttribute("stroke-width", "2.5");
+    tongue.setAttribute("ry", "0");
+  } else if (vol < 0.7) {
+    const t = (vol - 0.45) / 0.25, w = 18 + t*2, h = 12 + t*6, tH = 3.5 + t;
+    upperLip.setAttribute("d", `M-${w+2},0 Q0,-${2+t} ${w+2},0`);
+    mouthFill.setAttribute("d", `M-${w},1 Q0,${h+1} ${w},1`);
+    mouthFill.setAttribute("fill", "#0A0A0A");
+    teethTop.setAttribute("d", `M-${w-2},1 L-${w-2},${1+tH} Q0,${tH+3} ${w-2},${1+tH} L${w-2},1 Z`);
+    lowerLip.setAttribute("d", `M-${w+2},${h-1} Q0,${h+6+t*3} ${w+2},${h-1}`);
+    lowerLip.setAttribute("stroke", "#0A0A0A"); lowerLip.setAttribute("stroke-width", "2.5");
+    tongue.setAttribute("cy", `${h-2}`);
+    tongue.setAttribute("ry", `${2+t*3}`);
+    tongue.setAttribute("rx", `${6+t*2}`);
+  } else {
+    const t = Math.min(1, (vol - 0.7) / 0.3), w = 20, h = 18 + t*4, tH = 4.5;
+    upperLip.setAttribute("d", `M-${w+2},0 Q0,-3 ${w+2},0`);
+    mouthFill.setAttribute("d", `M-${w},1 Q0,${h+1} ${w},1`);
+    mouthFill.setAttribute("fill", "#0A0A0A");
+    teethTop.setAttribute("d", `M-${w-2},1 L-${w-2},${1+tH} Q0,${tH+3} ${w-2},${1+tH} L${w-2},1 Z`);
+    lowerLip.setAttribute("d", `M-${w+2},${h-1} Q0,${h+8+t*2} ${w+2},${h-1}`);
+    lowerLip.setAttribute("stroke", "#0A0A0A"); lowerLip.setAttribute("stroke-width", "2.5");
+    tongue.setAttribute("cy", `${h-3}`);
+    tongue.setAttribute("ry", `${4+t*2}`);
+    tongue.setAttribute("rx", `${8+t}`);
+  }
+
+  // Update vol bars
+  bars.forEach((b, i) => {
+    const thresh = (i + 1) / NUM_BARS;
+    if (vol > thresh * 0.7) {
+      b.style.height  = Math.max(6, vol * 28 * (1 - i * 0.07)) + "px";
+      b.style.opacity = "0.9";
+    } else {
+      b.style.height  = "4px";
+      b.style.opacity = "0.2";
+    }
+  });
+}
+
+// ── TTS + real Web Audio lip-sync ────────────────────────────
+let ttsAudioCtx = null;
+
+async function pearlSpeak(text) {
+  return new Promise(async (resolve) => {
+    bubble.innerHTML   = `<em>${text}</em>`;
+    statusEl.textContent = "speaking…";
+    startSpeakEyes();
+
+    let lipInterval = null;
+
+    const done = () => {
+      if (lipInterval) clearInterval(lipInterval);
+      setMouth(0);
+      stopSpeakEyes();
+      drawVisualizer(null);
+      statusEl.textContent = isListening ? "listening…" : "ready";
+      if (isListening) startListeningEyes(); else resetEyesToIdle();
+      resolve();
+    };
+
+    try {
+      const res = await fetch("/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text })
+      });
+      if (!res.ok) throw new Error(`TTS status ${res.status}`);
+
+      const blob  = await res.blob();
+      const url   = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.crossOrigin = "anonymous";
+
+      // Web Audio analysis for real lip-sync
+      if (!ttsAudioCtx) {
+        ttsAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (ttsAudioCtx.state === "suspended") await ttsAudioCtx.resume();
+
+      const analyser = ttsAudioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.6;
+      const dataArr = new Uint8Array(analyser.frequencyBinCount);
+
+      const src = ttsAudioCtx.createMediaElementSource(audio);
+      src.connect(analyser);
+      analyser.connect(ttsAudioCtx.destination);
+
+      let rafId;
+      function lipLoop() {
+        analyser.getByteTimeDomainData(dataArr);
+        let sum = 0;
+        for (let i = 0; i < dataArr.length; i++) {
+          const v = (dataArr[i] - 128) / 128;
+          sum += v * v;
+        }
+        const amp = Math.sqrt(sum / dataArr.length);
+        setMouth(Math.min(amp * 6, 1));
+        setEyeExpression(Math.min(amp * 4, 1));
+        drawVisualizer(dataArr);
+        rafId = requestAnimationFrame(lipLoop);
+      }
+      lipLoop();
+
+      audio.onended = () => { cancelAnimationFrame(rafId); done(); };
+      audio.onerror = () => { cancelAnimationFrame(rafId); done(); };
+
+      // Autoplay — resume context if needed
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          // If autoplay blocked, click the page once
+          document.addEventListener("click", () => audio.play(), { once: true });
+        });
+      }
+
+    } catch (err) {
+      console.warn("ElevenLabs TTS failed, using browser speech:", err);
+
+      // Fallback: browser SpeechSynthesis with animated mouth
+      lipInterval = setInterval(() => {
+        const v = 0.2 + Math.random() * 0.65;
+        setMouth(v);
+        setEyeExpression(v);
+      }, 80);
+
+      if (window.speechSynthesis) {
+        speechSynthesis.cancel();
+        const utt = new SpeechSynthesisUtterance(text);
+        utt.rate   = 0.9;
+        utt.pitch  = 1.3;
+        utt.volume = 1;
+        const femVoice = speechSynthesis.getVoices()
+          .find(v => /samantha|victoria|karen|zira|female/i.test(v.name));
+        if (femVoice) utt.voice = femVoice;
+        utt.onend   = done;
+        utt.onerror = done;
+        speechSynthesis.speak(utt);
+      } else {
+        setTimeout(done, text.length * 55);
+      }
+    }
+  });
+}
+
+// ── Chat panel ───────────────────────────────────────────────
+let chatHistory   = [];
+let chatPanelOpen = false;
+
+function toggleChat() {
+  chatPanelOpen = !chatPanelOpen;
+  const panel = document.getElementById("chatPanel");
+  const btn   = document.getElementById("chatBtn");
+  panel.classList.toggle("open", chatPanelOpen);
+  btn.classList.toggle("on", chatPanelOpen);
+}
+
+function handleChatKey(e) {
+  if (e.key === "Enter") sendChatMessage();
+}
+
+function appendChatMsg(role, text) {
+  const container = document.getElementById("chatMessages");
+  const div = document.createElement("div");
+  div.className = `chat-msg ${role}`;
+
+  const iconDiv = document.createElement("div");
+  iconDiv.className = "chat-msg-icon";
+
+  if (role === "pearl") {
+    iconDiv.style.cssText = "background:var(--orange);font-size:9px;color:white;font-weight:700;";
+    iconDiv.textContent = "MP";
+  } else {
+    iconDiv.textContent = "you";
+  }
+
+  const textDiv = document.createElement("div");
+  textDiv.className = "chat-bubble-text";
+  textDiv.textContent = text;
+
+  div.appendChild(iconDiv);
+  div.appendChild(textDiv);
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function showTypingDots() {
+  const container = document.getElementById("chatMessages");
+  const div = document.createElement("div");
+  div.className = "chat-msg pearl"; div.id = "typingDots";
+  const iconDiv = document.createElement("div");
+  iconDiv.className = "chat-msg-icon";
+  iconDiv.style.cssText = "background:var(--orange);font-size:9px;color:white;font-weight:700;";
+  iconDiv.textContent = "MP";
+  const textDiv = document.createElement("div");
+  textDiv.className = "chat-bubble-text dots";
+  textDiv.innerHTML = '<span>●</span>&nbsp;<span>●</span>&nbsp;<span>●</span>';
+  div.appendChild(iconDiv); div.appendChild(textDiv);
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function removeTypingDots() {
+  const d = document.getElementById("typingDots");
+  if (d) d.remove();
+}
+
+async function sendChatMessage() {
+  const input = document.getElementById("chatInput");
+  const text  = input.value.trim();
+  if (!text) return;
+  input.value = "";
+
+  appendChatMsg("user", text);
+  showTypingDots();
+  startThinkingEyes();
+  statusEl.textContent = "thinking…";
+  bubble.innerHTML = `<span style="opacity:0.5">●&nbsp;●&nbsp;●</span>`;
+
+  try {
+    const res  = await fetch("/chat", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ message: text, history: chatHistory })
+    });
+    const data  = await res.json();
+    const reply = data.reply || "Well sugar, something went wrong!";
+
+    chatHistory.push({ role: "user",      content: text  });
+    chatHistory.push({ role: "assistant", content: reply });
+    if (chatHistory.length > 12) chatHistory = chatHistory.slice(-12);
+
+    removeTypingDots();
+    appendChatMsg("pearl", reply);
+    await pearlSpeak(reply);
+  } catch (err) {
+    removeTypingDots();
+    await pearlSpeak("Oh sugar, I can't reach my brain right now! Make sure the server is running.");
+  }
+}
+
+// ── Voice listen mode ────────────────────────────────────────
+let isListening    = false;
+let recognition    = null;
+let micStream      = null;
+let micAnimFrame   = null;
+let micAudioCtx    = null;
+let micAnalyser    = null;
+let scriptProc     = null;
+let audioSocket    = null;
+let smoothVol      = 0;
+
+async function toggleListen() {
+  isListening ? stopListening() : startListening();
+}
+
+async function startListening() {
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+  } catch {
+    bubble.textContent = "Microphone access denied — please allow it in your browser!";
+    return;
+  }
+
+  isListening = true;
+  listenBtn.textContent = "⏹ Stop";
+  listenBtn.classList.add("active");
+  statusEl.textContent  = "listening…";
+  bubble.textContent    = "I'm all ears, sugar! Go ahead and speak.";
+  startListeningEyes();
+
+  // ── Mic analysis (for real-time vol bars while user speaks) ──
+  micAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  micAnalyser = micAudioCtx.createAnalyser();
+  micAnalyser.fftSize = 256;
+  const srcNode = micAudioCtx.createMediaStreamSource(micStream);
+  srcNode.connect(micAnalyser);
+
+  // Script processor — collects PCM and sends over WebSocket
+  scriptProc = micAudioCtx.createScriptProcessor(4096, 1, 1);
+
+  // Connect: src → analyser (for display) + src → scriptProc → silentGain → dest
+  const silentGain = micAudioCtx.createGain();
+  silentGain.gain.value = 0;  // no feedback
+  srcNode.connect(scriptProc);
+  scriptProc.connect(silentGain);
+  silentGain.connect(micAudioCtx.destination);
+
+  const freqData = new Uint8Array(micAnalyser.frequencyBinCount);
+  function micTick() {
+    micAnalyser.getByteFrequencyData(freqData);
+    const avg  = Array.from(freqData.slice(0, 40)).reduce((a, b) => a + b, 0) / 40;
+    const norm = Math.min(1, avg / 60);
+    smoothVol  = smoothVol * 0.5 + norm * 0.5;
+    setMouth(smoothVol);
+    drawVisualizer(freqData);
+    micAnimFrame = requestAnimationFrame(micTick);
+  }
+  micTick();
+
+  // ── WebSocket to backend for server-side STT ──
+  try {
+    const proto     = location.protocol === "https:" ? "wss" : "ws";
+    audioSocket     = new WebSocket(`${proto}://${location.host}/audio/ws`);
+    audioSocket.binaryType = "arraybuffer";
+
+    audioSocket.onmessage = e => {
+      // Server sends back MP3 bytes after processing
+      if (e.data instanceof ArrayBuffer && e.data.byteLength > 0) {
+        const blob  = new Blob([e.data], { type: "audio/mpeg" });
+        const url   = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.play().catch(() => {});
+      }
+    };
+
+    audioSocket.onerror = () => { audioSocket = null; };
+
+    scriptProc.onaudioprocess = e => {
+      if (!audioSocket || audioSocket.readyState !== WebSocket.OPEN) return;
+      const input  = e.inputBuffer.getChannelData(0);
+      const buf    = new ArrayBuffer(input.length * 2);
+      const view   = new DataView(buf);
+      for (let i = 0; i < input.length; i++) {
+        const s = Math.max(-1, Math.min(1, input[i]));
+        view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      }
+      audioSocket.send(buf);
+    };
+  } catch (wsErr) {
+    console.warn("WebSocket not available:", wsErr);
+  }
+
+  // ── Client-side SpeechRecognition (primary text path) ──
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    statusEl.textContent = "Use Chrome for speech recognition";
+    return;
+  }
+
+  recognition = new SR();
+  recognition.continuous      = true;
+  recognition.interimResults  = true;
+  recognition.lang            = "en-US";
+
+  recognition.onresult = e => {
+    let interim = "", final = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) final   += e.results[i][0].transcript;
+      else                       interim += e.results[i][0].transcript;
+    }
+    if (interim) {
+      bubble.innerHTML = `You: "<em>${interim}</em>…"`;
+    }
+    if (final.trim()) {
+      try { recognition.stop(); } catch {}
+      askPearl(final.trim()).then(() => {
+        if (isListening && recognition) {
+          try { recognition.start(); } catch {}
+        }
+      });
+    }
+  };
+
+  recognition.onerror = e => {
+    if (e.error !== "no-speech" && e.error !== "aborted") {
+      console.warn("SR error:", e.error);
+    }
+  };
+
+  recognition.onend = () => {
+    if (isListening) {
+      try { recognition.start(); } catch {}
+    }
+  };
+
+  recognition.start();
+}
+
+function stopListening() {
+  isListening = false;
+  listenBtn.textContent = "🎙 Listen";
+  listenBtn.classList.remove("active");
+
+  if (recognition)  { try { recognition.stop(); }        catch {} recognition  = null; }
+  if (micAnimFrame) { cancelAnimationFrame(micAnimFrame); micAnimFrame = null; }
+  if (scriptProc)   { try { scriptProc.disconnect(); }    catch {} scriptProc   = null; }
+  if (micAudioCtx)  { micAudioCtx.close();                               micAudioCtx = null; }
+  if (micStream)    { micStream.getTracks().forEach(t => t.stop());      micStream   = null; }
+  if (audioSocket)  { try { audioSocket.close(); }        catch {} audioSocket  = null; }
+
+  setMouth(0);
+  drawVisualizer(null);
+  resetEyesToIdle();
+  statusEl.textContent = "ready";
+}
+
+// ── Backend chat helper ───────────────────────────────────────
+async function askPearl(userMessage) {
+  statusEl.textContent = "thinking…";
+  startThinkingEyes();
+  bubble.innerHTML = `<span style="opacity:0.5">●&nbsp;●&nbsp;●</span>`;
+
+  try {
+    const res  = await fetch("/chat", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ message: userMessage, history: chatHistory })
+    });
+    const data  = await res.json();
+    const reply = data.reply || "Well sugar, something went wrong!";
+
+    chatHistory.push({ role: "user",      content: userMessage });
+    chatHistory.push({ role: "assistant", content: reply       });
+    if (chatHistory.length > 12) chatHistory = chatHistory.slice(-12);
+
+    await pearlSpeak(reply);
+  } catch (err) {
+    await pearlSpeak("Oh sugar, I can't reach my brain right now! Is the server running?");
+  }
+}
+
+// ── Boot ──────────────────────────────────────────────────────
+window.speechSynthesis && (window.speechSynthesis.onvoiceschanged = () => {});
+window.addEventListener("beforeunload", () => stopListening());
+
+window.onload = () => {
+  setTimeout(() => {
+    bubble.innerHTML =
+      `Hey sugar! Press <strong style="color:var(--orange)">Listen</strong> to speak, ` +
+      `or <strong style="color:var(--green)">Chat</strong> to type!`;
+  }, 500);
+};
+</script>
+</body>
+</html>
