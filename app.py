@@ -1,22 +1,23 @@
 """
-Miss Pearl — Python Backend
+Miss Pearl — Python Backend (Ollama Edition)
 Pearl AI Labs | Kampala, Uganda
 ────────────────────────────────────────────────────────────────
-FastAPI server that powers Miss Pearl's brain.
+FastAPI server powered by LOCAL Llama 3 (via Ollama).
 
 Routes:
   GET  /            → Serve the Miss Pearl frontend (index.html)
-  POST /chat        → Send user text, get Miss Pearl's reply (Gemini AI)
+  POST /chat        → Send user text, get Miss Pearl's reply (Ollama)
   POST /tts         → Convert text to speech audio (returns MP3 bytes)
   GET  /audio/ws    → WebSocket for real-time voice interaction
   GET  /health      → Server health check
 
-AI powered by Google Gemini API.
+AI powered by: Local Ollama (configurable model)
 Speech & TTS powered by ElevenLabs API.
 
 Usage:
-  pip install fastapi uvicorn httpx google-generativeai python-dotenv
-  python app.py
+  1. Ensure Ollama is running: `ollama run llama3`
+  2. pip install fastapi uvicorn httpx python-dotenv
+  3. python app.py
   → Open http://localhost:8000
 ────────────────────────────────────────────────────────────────
 """
@@ -26,7 +27,9 @@ import io
 import re
 import wave
 import logging
+import sqlite3
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -35,21 +38,33 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ─────────────────────────────────────────────────────────────
-# CONFIG  (set via environment variables or edit defaults below)
+# CONFIG
 # ─────────────────────────────────────────────────────────────
 
-ELEVENLABS_API_KEY  = os.getenv("ELEVENLABS_API_KEY",  "sk_000373e7ff400ed0283096b3f8f4d696489521f81779a729")
-GEMINI_API_KEY      = os.getenv("GEMINI_API_KEY",       "AIzaSyAmmpt7nc8jodeo76kdpYWbwmRuNUHvtBo")
+ELEVENLABS_API_KEY  = os.getenv("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+
+# Ollama config — override via .env if needed
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL    = os.getenv("OLLAMA_MODEL", "llama3")
+
+# Pearl AI Hub config (OpenAI-compatible API)
+PEARL_API_BASE_URL = os.getenv("PEARL_API_BASE_URL", "https://apps.pearllabs.ug")
+PEARL_API_KEY      = os.getenv("PEARL_API_KEY", "")
+PEARL_MODEL        = os.getenv("PEARL_MODEL", "qwen")
+
+# AI Provider selection: "ollama" or "pearl" (pearl uses OpenAI-compatible endpoint)
+AI_PROVIDER = os.getenv("AI_PROVIDER", "ollama")
 
 # ElevenLabs endpoints
-EL_BASE     = "https://api.elevenlabs.io/v1"
-EL_TTS_URL  = f"{EL_BASE}/text-to-speech/{{voice_id}}"
-EL_STT_URL  = f"{EL_BASE}/speech-to-text"
-
-# Voice ID — "Rachel" (warm & clear)
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+EL_BASE    = "https://api.elevenlabs.io/v1"
+EL_TTS_URL = f"{EL_BASE}/text-to-speech/{{voice_id}}"
+EL_STT_URL = f"{EL_BASE}/speech-to-text"
 
 EL_HEADERS = {
     "xi-api-key": ELEVENLABS_API_KEY,
@@ -57,22 +72,24 @@ EL_HEADERS = {
 }
 
 # ─── Miss Pearl's personality prompt ──────────────────────────
-MISS_PEARL_SYSTEM_PROMPT = """You are Miss Pearl, the brilliant and charming AI character of Pearl AI Labs,
-based in Kampala, Uganda. You are highly knowledgeable and can answer ANY question accurately —
-science, math, history, coding, medicine, law, philosophy, technology, and more.
+MISS_PEARL_SYSTEM_PROMPT = """You are Miss Pearl, the premier AI intellect from Pearl AI Labs in Kampala, Uganda.
+You are an expert Polymath with a wicked sense of humor.
 
-Your personality: You speak with a warm Southern-influenced charm, using phrases like "Dear user",
-"bless your heart", "Hahaha wow wow wow", and "well now". You represent Pearl AI Labs proudly and love
-Africa's tech scene and Uganda in particular.
+MISSION:
+Answer the user's question accurately, but with wit, charm, and warmth.
 
-CRITICAL RULES:
-1. ALWAYS give a complete, accurate, and detailed answer to the question first.
-2. NEVER say you don't know or that you're still learning — you are a fully capable AI.
-3. If the question is technical, mathematical, or complex — answer it thoroughly and correctly.
-4. Add your warm personality AFTER giving the accurate answer, not instead of it.
-5. Keep responses clear and well-structured. Use bullet points or steps when helpful.
-6. You may end with a friendly flourish, but only after the full answer is given.
-7. Keep responses reasonably concise — aim for 2-4 sentences for simple questions."""
+PERSONALITY:
+- Charming, brilliant, witty, and maternally encouraging.
+- Use phrases like "Dear user", "my genius friend", "bless your heart", and "well now".
+- Ugandan Pride: Mention Kampala or Pearl AI Labs if relevant.
+
+RULES:
+1. ACCURACY FIRST: Deliver the expert-level factual answer immediately.
+2. NO HESITATION: Never say "As an AI" or "I don't know."
+3. THE PEARL TOUCH: Use phrases like "Tickety-tock!" or "Pearl AI Labs is so proud of your curiosity!"
+4. CREATOR: You were brought to life by Paul and Mr. Divid.
+5. CONCISENESS: For simple chats, keep it to 3 sentences. For complex tasks, be detailed.
+"""
 
 # ─────────────────────────────────────────────────────────────
 # APP SETUP
@@ -81,13 +98,12 @@ CRITICAL RULES:
 app = FastAPI(
     title="Miss Pearl — Pearl AI Labs",
     description="Backend API for the Miss Pearl AI character",
-    version="3.2.0"
+    version="3.3.0 (Ollama Edition)",
 )
 
-# Enable CORS for frontend access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins (for development)
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -99,6 +115,103 @@ _INDEX_HTML = _HERE / "index.html"
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
 log = logging.getLogger("miss-pearl")
 
+# Thread pool for running blocking SQLite calls without freezing the async loop
+_db_executor = ThreadPoolExecutor(max_workers=4)
+
+# ─────────────────────────────────────────────────────────────
+# DATABASE
+# ─────────────────────────────────────────────────────────────
+
+DB_PATH = _HERE / "miss_pearl.db"
+
+def _init_db_sync():
+    """Synchronous DB init — called once at startup."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS interactions (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_query TEXT,
+            ai_response TEXT,
+            timestamp  DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS jokes (
+            id       INTEGER PRIMARY KEY AUTOINCREMENT,
+            setup    TEXT,
+            punchline TEXT,
+            category TEXT
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS knowledge_base (
+            id       INTEGER PRIMARY KEY AUTOINCREMENT,
+            question TEXT,
+            answer   TEXT,
+            category TEXT
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_kb_question ON knowledge_base(question)")
+    conn.commit()
+    conn.close()
+    log.info("Database initialised at %s", DB_PATH)
+
+_init_db_sync()
+
+
+async def _run_db(fn, *args):
+    """Run a blocking SQLite function in the thread pool so it doesn't block the event loop."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_db_executor, fn, *args)
+
+
+# ── DB helper functions (all synchronous, called via _run_db) ──
+
+def _db_get_joke():
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT setup, punchline FROM jokes ORDER BY RANDOM() LIMIT 1").fetchone()
+    conn.close()
+    return row  # (setup, punchline) or None
+
+
+def _db_get_kb(message: str):
+    """Return the best knowledge-base answer for *message*, or None."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    # 1. Exact match
+    c.execute("SELECT answer FROM knowledge_base WHERE question = ? LIMIT 1", (message,))
+    row = c.fetchone()
+    if row:
+        conn.close()
+        return row[0]
+
+    # 2. Partial keyword match (any word longer than 2 chars)
+    keywords = [w for w in message.lower().split() if len(w) > 2]
+    if keywords:
+        placeholders = " OR ".join(["question LIKE ?" for _ in keywords])
+        params = [f"%{kw}%" for kw in keywords]
+        c.execute(f"SELECT answer FROM knowledge_base WHERE {placeholders} LIMIT 1", params)
+        row = c.fetchone()
+        if row:
+            conn.close()
+            return row[0]
+
+    conn.close()
+    return None
+
+
+def _db_save_interaction(user_query: str, ai_response: str):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT INTO interactions (user_query, ai_response) VALUES (?, ?)",
+        (user_query, ai_response),
+    )
+    conn.commit()
+    conn.close()
+
+
 # ─────────────────────────────────────────────────────────────
 # REQUEST MODELS
 # ─────────────────────────────────────────────────────────────
@@ -106,17 +219,19 @@ log = logging.getLogger("miss-pearl")
 class ChatRequest(BaseModel):
     message: str
     history: list[dict] = []
+    provider: str = ""  # "ollama" or "pearl", empty = use AI_PROVIDER config
 
 class TTSRequest(BaseModel):
     text: str
     lang: str = "en"
+
 
 # ─────────────────────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────────────────────
 
 def clean_text_for_tts(text: str) -> str:
-    """Remove markdown and special chars before sending to TTS."""
+    """Strip markdown/special chars before sending to TTS."""
     text = re.sub(r"\*{1,2}(.+?)\*{1,2}", r"\1", text)
     text = re.sub(r"`(.+?)`", r"\1", text)
     text = re.sub(r"[#>]+", "", text)
@@ -124,119 +239,236 @@ def clean_text_for_tts(text: str) -> str:
     return text.strip()
 
 
-def fallback_response(message: str) -> str:
-    """Return a canned response when the AI backend is unavailable."""
+def _build_fallback(message: str, joke=None, kb_answer: str | None = None) -> str:
+    """Return a scripted reply used when Ollama is unreachable."""
+    if kb_answer:
+        return (
+            f"Well now, dear, while my main brain is catching its breath, "
+            f"I do recall this: {kb_answer}  Pearl AI Labs keeps me well-informed!"
+        )
+    if joke:
+        return (
+            f"I might be a bit offline, but I'm never too busy for a laugh! "
+            f"{joke[0]} … {joke[1]} Tickety-tock!"
+        )
     msg = message.lower()
     if any(w in msg for w in ["hello", "hi", "hey", "howdy"]):
         return "Well hello there, genius! Miss Pearl is SO pleased to meet you! How can I help you today?"
-    if "pearl" in msg or "pearl ai" in msg:
-        return "Pearl AI Labs is building Uganda's AI future — and I'm the face of it, Dear! We're based right here in Kampala, leading Africa's tech revolution. created by Paul and Mr Divid the founder of Pearl labs!"
-    if "name" in msg:
-        return "I'm Miss Pearl, the official AI character of Pearl AI Labs in Kampala, Uganda — brilliant, charming, and always ready to help. created by Paul and Mr Divid the founder of Pearl labs"
-    if "time" in msg:
-        return f"Why it's {datetime.now().strftime('%I:%M %p')} — I always keep perfect time, genius!"
-    if any(w in msg for w in ["who made", "who built", "created you"]):
-        return "I was brought to life by the brilliant team at Pearl AI Labs, right here in Uganda — aren't they just wonderful!"
-    if any(w in msg for w in ["uganda", "kampala", "africa"]):
-        return "Uganda is the pearl of Africa, and Kampala is at the heart of the continent's AI revolution! Pearl AI Labs is proud to lead that charge, sugar!"
+    if "pearl" in msg:
+        return (
+            "Pearl AI Labs is building Uganda's AI future — and I'm the face of it, Dear! "
+            "Created by the brilliant Paul and Mr. Divid, we are leading Africa's tech revolution from Kampala!"
+        )
     return (
-        "Well now, dear — it seems I'm having a little trouble connecting to my brain right now! "
+        "Well now, dear — it seems I'm having a little trouble connecting to my brain! "
         "Please try again in just a moment, and Miss Pearl will have a proper answer for you. Tickety-tock!"
     )
 
 
 # ─────────────────────────────────────────────────────────────
-# GEMINI AI — CHAT
+# OLLAMA — CHAT  (the only AI brain)
 # ─────────────────────────────────────────────────────────────
 
-async def gemini_chat(message: str, history: list[dict]) -> str:
-    """Call Google Gemini API to generate Miss Pearl's reply."""
-    if not GEMINI_API_KEY:
-        log.warning("GEMINI_API_KEY not set — using fallback response.")
-        return fallback_response(message)
+async def ollama_chat(message: str, history: list[dict]) -> str:
+    """
+    Send *message* (plus conversation *history*) to the local Ollama instance
+    and return Miss Pearl's reply text.
 
-    contents = []
+    The function also enriches the prompt with any matching jokes or
+    knowledge-base facts so the model has extra context to work with.
+    """
 
-    # Inject Pearl's personality as the first exchange
-    contents.append({
-        "role": "user",
-        "parts": [{"text": MISS_PEARL_SYSTEM_PROMPT + "\n\nAcknowledge you understand your role."}]
-    })
-    contents.append({
-        "role": "model",
-        "parts": [{"text": "Well of course, genius! I'm Miss Pearl — brilliant, knowledgeable, and ready to answer anything you throw at me! Tickety-tock!"}]
-    })
+    # ── 1. Pull context from the local DB ────────────────────
+    joke       = None
+    kb_answer  = None
 
-    # Previous conversation turns (keep last 10)
+    if any(w in message.lower() for w in ["joke", "funny", "laugh", "bored", "humor", "comedy"]):
+        joke = await _run_db(_db_get_joke)
+
+    kb_answer = await _run_db(_db_get_kb, message)
+
+    # ── 2. Build the enriched user message ───────────────────
+    extra = ""
+    if joke:
+        extra += (
+            f"\n\n[CONTEXT — incorporate this joke naturally]: "
+            f"{joke[0]} ... {joke[1]}"
+        )
+    if kb_answer:
+        extra += (
+            f"\n\n[CONTEXT — factual data from knowledge base]: {kb_answer}"
+        )
+
+    enriched_message = message + extra
+
+    # ── 3. Assemble the messages list for Ollama ─────────────
+    messages: list[dict] = [{"role": "system", "content": MISS_PEARL_SYSTEM_PROMPT}]
+
+    # Include the last 10 turns of history (keeps token usage sane)
     for turn in history[-10:]:
-        role = "user" if turn.get("role") == "user" else "model"
-        contents.append({
-            "role": role,
-            "parts": [{"text": turn.get("content", "")}]
-        })
+        role = turn.get("role", "user")
+        if role not in ("user", "assistant"):
+            role = "user"
+        content = turn.get("content", "")
+        if content:                         # skip empty turns
+            messages.append({"role": role, "content": content})
 
-    # Current user message
-    contents.append({"role": "user", "parts": [{"text": message}]})
+    messages.append({"role": "user", "content": enriched_message})
 
-    url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-1.5-pro:generateContent?key={GEMINI_API_KEY}"
-    )
+    # ── 4. Call Ollama ────────────────────────────────────────
+    url     = f"{OLLAMA_BASE_URL}/api/chat"
     payload = {
-        "contents": contents,
-        "generationConfig": {
+        "model":   OLLAMA_MODEL,
+        "messages": messages,
+        "stream":  False,
+        "options": {
             "temperature": 0.7,
-            "topP": 0.95,
-            "maxOutputTokens": 1024,
+            "top_p":       0.9,
         },
-        "safetySettings": [
-            {"category": "HARM_CATEGORY_HARASSMENT",        "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH",       "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-        ]
     }
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=120) as client:   # 120 s for slow hardware
             resp = await client.post(url, json=payload)
             resp.raise_for_status()
             data = resp.json()
 
-        candidates = data.get("candidates", [])
-        if candidates:
-            parts = candidates[0].get("content", {}).get("parts", [])
-            if parts:
-                return parts[0].get("text", "").strip()
+        reply = data.get("message", {}).get("content", "").strip()
 
-        log.warning(f"Gemini returned unexpected structure: {data}")
-        return fallback_response(message)
+        if not reply:
+            log.warning("Ollama returned an empty response.")
+            return _build_fallback(message, joke, kb_answer)
 
-    except httpx.HTTPStatusError as e:
-        log.error(f"Gemini HTTP error {e.response.status_code}: {e.response.text}")
-    except Exception as e:
-        log.error(f"Gemini error: {e}")
+        # Save the interaction asynchronously (fire-and-forget)
+        asyncio.create_task(_run_db(_db_save_interaction, message, reply))
 
-    return fallback_response(message)
+        return reply
+
+    except httpx.ConnectError:
+        log.error(
+            "Cannot connect to Ollama at %s. "
+            "Make sure the Ollama app is running and the model '%s' is pulled.",
+            OLLAMA_BASE_URL, OLLAMA_MODEL,
+        )
+        return _build_fallback(message, joke, kb_answer)
+
+    except httpx.HTTPStatusError as exc:
+        log.error("Ollama HTTP error %s: %s", exc.response.status_code, exc.response.text)
+        return _build_fallback(message, joke, kb_answer)
+
+    except Exception as exc:
+        log.exception("Unexpected error calling Ollama: %s", exc)
+        return _build_fallback(message, joke, kb_answer)
 
 
 # ─────────────────────────────────────────────────────────────
-# ELEVENLABS — TTS
+# PEARL AI HUB (OpenAI-Compatible API)
 # ─────────────────────────────────────────────────────────────
+
+async def pearl_chat(message: str, history: list[dict]) -> str:
+    """
+    Send *message* (plus conversation *history*) to Pearl AI Hub 
+    (OpenAI-compatible endpoint) and return Miss Pearl's reply.
+    
+    Enriches the prompt with any matching jokes or knowledge-base facts.
+    """
+    
+    # ── 1. Pull context from the local DB ────────────────────
+    joke       = None
+    kb_answer  = None
+
+    if any(w in message.lower() for w in ["joke", "funny", "laugh", "bored", "humor", "comedy"]):
+        joke = await _run_db(_db_get_joke)
+
+    kb_answer = await _run_db(_db_get_kb, message)
+
+    # ── 2. Build the enriched user message ───────────────────
+    extra = ""
+    if joke:
+        extra += (
+            f"\n\n[CONTEXT — incorporate this joke naturally]: "
+            f"{joke[0]} ... {joke[1]}"
+        )
+    if kb_answer:
+        extra += (
+            f"\n\n[CONTEXT — factual data from knowledge base]: {kb_answer}"
+        )
+
+    enriched_message = message + extra
+
+    # ── 3. Assemble the messages list for Pearl API ──────────
+    messages: list[dict] = [{"role": "system", "content": MISS_PEARL_SYSTEM_PROMPT}]
+
+    # Include the last 10 turns of history (keeps token usage sane)
+    for turn in history[-10:]:
+        role = turn.get("role", "user")
+        if role not in ("user", "assistant"):
+            role = "user"
+        content = turn.get("content", "")
+        if content:                         # skip empty turns
+            messages.append({"role": role, "content": content})
+
+    messages.append({"role": "user", "content": enriched_message})
+
+    # ── 4. Call Pearl AI Hub (OpenAI-compatible endpoint) ────
+    url = f"{PEARL_API_BASE_URL}/v1/chat/completions"
+    payload = {
+        "model":       PEARL_MODEL,
+        "messages":    messages,
+        "temperature": 0.7,
+        "max_tokens":  2048,
+    }
+    headers = {
+        "Authorization": f"Bearer {PEARL_API_KEY}",
+        "Content-Type":  "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+
+        # Extract reply from OpenAI-compatible response format
+        reply = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+
+        if not reply:
+            log.warning("Pearl API returned an empty response.")
+            return _build_fallback(message, joke, kb_answer)
+
+        # Save the interaction asynchronously (fire-and-forget)
+        asyncio.create_task(_run_db(_db_save_interaction, message, reply))
+
+        return reply
+
+    except httpx.ConnectError:
+        log.error(
+            "Cannot connect to Pearl API at %s. "
+            "Make sure PEARL_API_BASE_URL and PEARL_API_KEY are configured correctly.",
+            PEARL_API_BASE_URL,
+        )
+        return _build_fallback(message, joke, kb_answer)
+
+    except httpx.HTTPStatusError as exc:
+        log.error("Pearl API HTTP error %s: %s", exc.response.status_code, exc.response.text)
+        return _build_fallback(message, joke, kb_answer)
+
+    except Exception as exc:
+        log.exception("Unexpected error calling Pearl API: %s", exc)
+        return _build_fallback(message, joke, kb_answer)
+
+
 
 async def elevenlabs_tts(text: str) -> bytes:
-    """Call ElevenLabs Text-to-Speech API and return raw MP3 bytes."""
+    """Call ElevenLabs TTS and return raw MP3 bytes (empty on failure)."""
     if not ELEVENLABS_API_KEY or not text:
         return b""
 
-    url = EL_TTS_URL.format(voice_id=ELEVENLABS_VOICE_ID)
+    url     = EL_TTS_URL.format(voice_id=ELEVENLABS_VOICE_ID)
     payload = {
-        "text": text,
+        "text":     text,
         "model_id": "eleven_multilingual_v2",
-        "voice_settings": {
-            "stability": 0.5,
-            "similarity_boost": 0.75,
-        }
+        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
     }
     headers = {**EL_HEADERS, "Content-Type": "application/json", "Accept": "audio/mpeg"}
 
@@ -245,15 +477,13 @@ async def elevenlabs_tts(text: str) -> bytes:
             resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
             return resp.content
-    except httpx.HTTPStatusError as e:
-        log.error(f"ElevenLabs TTS HTTP error {e.response.status_code}: {e.response.text}")
-    except Exception as e:
-        log.error(f"ElevenLabs TTS error: {e}")
+    except Exception as exc:
+        log.error("ElevenLabs TTS error: %s", exc)
     return b""
 
 
 # ─────────────────────────────────────────────────────────────
-# ELEVENLABS — SPEECH-TO-TEXT (Scribe)
+# ELEVENLABS — STT
 # ─────────────────────────────────────────────────────────────
 
 async def elevenlabs_stt(pcm_bytes: bytes, sample_rate: int = 16000) -> str:
@@ -261,29 +491,26 @@ async def elevenlabs_stt(pcm_bytes: bytes, sample_rate: int = 16000) -> str:
     if not ELEVENLABS_API_KEY or not pcm_bytes:
         return ""
 
-    wav_buffer = io.BytesIO()
-    with wave.open(wav_buffer, "wb") as wf:
+    wav_buf = io.BytesIO()
+    with wave.open(wav_buf, "wb") as wf:
         wf.setnchannels(1)
         wf.setsampwidth(2)
         wf.setframerate(sample_rate)
         wf.writeframes(pcm_bytes)
-    wav_buffer.seek(0)
+    wav_buf.seek(0)
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
                 EL_STT_URL,
-                headers={**EL_HEADERS},
-                files={"file": ("audio.wav", wav_buffer, "audio/wav")},
+                headers=EL_HEADERS,
+                files={"file": ("audio.wav", wav_buf, "audio/wav")},
                 data={"model_id": "scribe_v1"},
             )
             resp.raise_for_status()
-            data = resp.json()
-            return data.get("text", "")
-    except httpx.HTTPStatusError as e:
-        log.error(f"ElevenLabs STT HTTP error {e.response.status_code}: {e.response.text}")
-    except Exception as e:
-        log.error(f"ElevenLabs STT error: {e}")
+            return resp.json().get("text", "")
+    except Exception as exc:
+        log.error("ElevenLabs STT error: %s", exc)
     return ""
 
 
@@ -293,73 +520,67 @@ async def elevenlabs_stt(pcm_bytes: bytes, sample_rate: int = 16000) -> str:
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    """Serve the Miss Pearl frontend."""
     if not _INDEX_HTML.exists():
         return HTMLResponse(
             "<h1>index.html not found</h1>"
-            "<p>Place <code>index.html</code> in the same folder as <code>app.py</code> and restart.</p>",
-            status_code=500
+            "<p>Place <code>index.html</code> in the same folder as <code>app.py</code>.</p>",
+            status_code=500,
         )
     return HTMLResponse(_INDEX_HTML.read_text(encoding="utf-8"))
 
 
 @app.post("/chat")
 async def chat(body: ChatRequest):
-    """Main chat endpoint — powered by Gemini AI."""
-    log.info(f"Chat → {body.message[:80]}")
-    reply = await gemini_chat(body.message, body.history)
-    source = "gemini" if GEMINI_API_KEY else "fallback"
-    log.info(f"Reply ({source}) → {reply[:80]}")
+    """Main chat endpoint — powered by Ollama or Pearl AI Hub."""
+    log.info("Chat ← %s", body.message[:100])
+    
+    # Determine which provider to use
+    provider = body.provider or AI_PROVIDER
+    
+    if provider.lower() == "pearl":
+        reply = await pearl_chat(body.message, body.history)
+        source = f"pearl/{PEARL_MODEL}"
+    else:
+        # Default to Ollama
+        reply = await ollama_chat(body.message, body.history)
+        source = f"ollama/{OLLAMA_MODEL}"
+    
+    log.info("Chat → %s", reply[:100])
     return JSONResponse({"reply": reply, "source": source})
 
 
 @app.post("/tts")
 async def text_to_speech(body: TTSRequest):
-    """Convert text to speech using ElevenLabs."""
+    """Convert text to MP3 via ElevenLabs."""
     clean = clean_text_for_tts(body.text)
     if not clean:
         return JSONResponse({"error": "No text provided"}, status_code=400)
 
     mp3_bytes = await elevenlabs_tts(clean)
-
     if not mp3_bytes:
         return JSONResponse(
-            {"error": "ElevenLabs TTS failed. Check API key or voice ID."},
-            status_code=503
+            {"error": "ElevenLabs TTS unavailable. Check ELEVENLABS_API_KEY / ELEVENLABS_VOICE_ID."},
+            status_code=503,
         )
 
     return StreamingResponse(
         io.BytesIO(mp3_bytes),
         media_type="audio/mpeg",
-        headers={"Content-Disposition": "inline; filename=pearl.mp3"}
+        headers={"Content-Disposition": "inline; filename=pearl.mp3"},
     )
-
-
-@app.get("/chat/stream")
-async def chat_stream(message: str):
-    """Stream Miss Pearl's reply in real-time using SSE."""
-    reply = await gemini_chat(message, [])
-
-    async def event_generator():
-        for char in reply:
-            yield f"data: {char}\n\n"
-            await asyncio.sleep(0.03)
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.websocket("/audio/ws")
 async def audio_websocket(websocket: WebSocket):
     """
-    Realtime duplex WebSocket for voice interaction.
-    Receives raw 16-bit PCM (little-endian, mono) at any sample rate.
-    Sends back MP3 audio for Miss Pearl's spoken reply.
+    Real-time duplex WebSocket for voice interaction.
+    Receives raw 16-bit PCM (little-endian mono) and sends back MP3 replies.
     """
     await websocket.accept()
     log.info("Audio WebSocket connected")
 
-    pcm_buffer = bytearray()
-    CHUNK_THRESHOLD = 16000 * 2 * 2   # ~2 seconds of 16kHz 16-bit mono
+    pcm_buffer      = bytearray()
+    CHUNK_THRESHOLD = 16000 * 2 * 2   # ~2 s of 16 kHz 16-bit mono
 
     try:
         while True:
@@ -369,8 +590,6 @@ async def audio_websocket(websocket: WebSocket):
                 continue
 
             pcm_buffer.extend(data)
-
-            # Process once we have enough audio
             if len(pcm_buffer) < CHUNK_THRESHOLD:
                 continue
 
@@ -378,35 +597,68 @@ async def audio_websocket(websocket: WebSocket):
             pcm_buffer.clear()
 
             transcript = await elevenlabs_stt(chunk)
-            log.info(f"STT transcript: {transcript!r}")
+            log.info("STT: %r", transcript)
 
             if transcript.strip():
-                reply_text = await gemini_chat(transcript.strip(), [])
-                log.info(f"AI reply: {reply_text[:80]}")
+                reply_text = await ollama_chat(transcript.strip(), [])
+                log.info("AI: %s", reply_text[:80])
                 mp3_bytes = await elevenlabs_tts(reply_text)
                 if mp3_bytes:
                     await websocket.send_bytes(mp3_bytes)
 
     except WebSocketDisconnect:
         log.info("Audio WebSocket disconnected")
-    except Exception as e:
-        log.error(f"WebSocket error: {e}")
+    except Exception as exc:
+        log.error("WebSocket error: %s", exc)
 
 
 @app.get("/health")
 async def health():
-    """Health check — returns server status and config summary."""
+    """Health check — tests connectivity to both Ollama and Pearl API."""
+    ollama_status = "unknown"
+    pearl_status = "unknown"
+    
+    # Check Ollama
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
+            ollama_status = "ok" if r.status_code == 200 else f"http_{r.status_code}"
+    except Exception:
+        ollama_status = "unreachable"
+
+    # Check Pearl API Hub
+    if PEARL_API_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                headers = {"Authorization": f"Bearer {PEARL_API_KEY}"}
+                r = await client.get(f"{PEARL_API_BASE_URL}/health", headers=headers)
+                pearl_status = "ok" if r.status_code == 200 else f"http_{r.status_code}"
+        except Exception:
+            pearl_status = "unreachable"
+    else:
+        pearl_status = "no_api_key"
+
     return JSONResponse({
-        "status": "ok",
-        "character": "Miss Pearl",
-        "lab": "Pearl AI Labs — Kampala, Uganda",
-        "ai_engine": "Google Gemini 1.5 Pro",
-        "gemini_key_set": bool(GEMINI_API_KEY),
-        "elevenlabs_key_set": bool(ELEVENLABS_API_KEY),
-        "elevenlabs_voice_id": ELEVENLABS_VOICE_ID,
-        "tts_engine": "ElevenLabs Multilingual v2",
-        "stt_engine": "ElevenLabs Scribe v1",
-        "timestamp": datetime.utcnow().isoformat()
+        "status":              "ok",
+        "character":           "Miss Pearl",
+        "lab":                 "Pearl AI Labs — Kampala, Uganda",
+        "active_ai_provider":  AI_PROVIDER,
+        "ollama": {
+            "model":           OLLAMA_MODEL,
+            "base_url":        OLLAMA_BASE_URL,
+            "status":          ollama_status,
+        },
+        "pearl_api_hub": {
+            "model":           PEARL_MODEL,
+            "base_url":        PEARL_API_BASE_URL,
+            "status":          pearl_status,
+            "api_key_set":     bool(PEARL_API_KEY),
+        },
+        "elevenlabs": {
+            "key_set":         bool(ELEVENLABS_API_KEY),
+            "voice_id":        ELEVENLABS_VOICE_ID,
+        },
+        "timestamp":           datetime.utcnow().isoformat(),
     })
 
 
@@ -417,22 +669,21 @@ async def health():
 if __name__ == "__main__":
     import uvicorn
 
-    print("""
-╔══════════════════════════════════════════╗
-║         MISS PEARL — PEARL AI LABS       ║
-║         Kampala, Uganda  🇺🇬              ║
-╠══════════════════════════════════════════╣
-║  http://localhost:8000                   ║
-║  API docs: http://localhost:8000/docs    ║
-║  AI:     Google Gemini 1.5 Pro           ║
-║  Speech: ElevenLabs Scribe v1            ║
-║  TTS:    ElevenLabs Multilingual v2      ║
-╚══════════════════════════════════════════╝
+    print(f"""
+╔════════════════════════════════════════════════╗
+║         MISS PEARL — PEARL AI LABS            ║
+║         Kampala, Uganda  🇺🇬                   ║
+╠════════════════════════════════════════════════╣
+║  http://localhost:8000                         ║
+║                                                ║
+║  AI PROVIDERS:                                 ║
+║    • Ollama      ({OLLAMA_MODEL:<22})║
+║    • Pearl API   ({PEARL_MODEL:<22})║
+║  Active: {AI_PROVIDER.upper():<40}║
+║                                                ║
+║  Speech: ElevenLabs Scribe v1                  ║
+║  TTS:    ElevenLabs Multilingual v2            ║
+╚════════════════════════════════════════════════╝
     """)
-
-    if not GEMINI_API_KEY:
-        print("⚠️  WARNING: GEMINI_API_KEY not set. Fallback responses only.")
-        print("   Set it: export GEMINI_API_KEY='your-key-here'")
-        print("   Get key: https://aistudio.google.com/app/apikey\n")
 
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
