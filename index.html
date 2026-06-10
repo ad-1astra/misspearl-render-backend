@@ -325,9 +325,10 @@
 
     <svg id="miss-pearl-svg" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg" style="cursor:pointer;">
       // ── Enable chat panel on AI card tap ──
-        document.getElementById("characterStage").addEventListener("click", function() {
-          window.open("https://misspearl-render-backend.onrender.com", "_blank");
-        });
+      document.getElementById("characterStage").addEventListener("click", function() {
+        if (!chatPanelOpen) toggleChat();
+        document.getElementById("chatInput").focus();
+      });
       <!-- Face base -->
       <circle cx="110" cy="110" r="100" fill="#F8F4EE" stroke="#0A0A0A" stroke-width="3"/>
       <!-- Eyes -->
@@ -391,32 +392,12 @@
   <div class="controls">
     <button class="btn"           id="listenBtn" onclick="toggleListen()">🎙 Listen</button>
     <button class="btn green-btn" id="chatBtn"   onclick="toggleChat()">💬 Chat</button>
-    <button class="btn" id="visionBtn" onclick="openVisionModal()">📷 Vision</button>
     <div class="volbars" id="volbars"></div>
   </div>
   <div class="status" id="status">ready</div>
-
-  <!-- Vision Modal -->
-  <div id="visionModal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.65); z-index:1000; align-items:center; justify-content:center;">
-    <div style="background:white; border-radius:16px; padding:24px 18px; box-shadow:0 4px 24px #0002; display:flex; flex-direction:column; align-items:center; gap:12px; max-width:95vw;">
-      <video id="visionVideo" width="260" height="200" autoplay playsinline style="border-radius:12px; background:#222;"></video>
-      <canvas id="visionCanvas" width="260" height="200" style="display:none;"></canvas>
-      <div style="display:flex; gap:10px;">
-        <button class="btn" onclick="captureVisionFrame()">Capture</button>
-        <button class="btn" onclick="closeVisionModal()">Cancel</button>
-      </div>
-      <div id="visionStatus" style="font-size:12px; color:#888; margin-top:6px;"></div>
-    </div>
-  </div>
 </div>
 
 <!-- ════════════════════════════════════════════════════════ -->
-<script>
-// Open Render-hosted AI when AI card is tapped
-document.getElementById("characterStage").addEventListener("click", function() {
-  window.open("https://misspearl-render-backend.onrender.com", "_blank");
-});
-</script>
 <script>
 "use strict";
 
@@ -1038,72 +1019,6 @@ window.onload = () => {
       `or <strong style="color:var(--green)">Chat</strong> to type!`;
   }, 500);
 };
-</script>
-</body>
-<script>
-// ── Vision Modal Logic ─────────────────────────────────────
-let visionStream = null;
-function openVisionModal() {
-  const modal = document.getElementById("visionModal");
-  const video = document.getElementById("visionVideo");
-  const status = document.getElementById("visionStatus");
-  modal.style.display = "flex";
-  status.textContent = "Allow camera access to show Miss Pearl what you see!";
-  navigator.mediaDevices.getUserMedia({ video: true })
-    .then(stream => {
-      visionStream = stream;
-      video.srcObject = stream;
-      status.textContent = "Frame what you want Miss Pearl to see, then press Capture.";
-    })
-    .catch(() => {
-      status.textContent = "Camera access denied. Please allow it in your browser.";
-    });
-}
-function closeVisionModal() {
-  const modal = document.getElementById("visionModal");
-  modal.style.display = "none";
-  const video = document.getElementById("visionVideo");
-  if (visionStream) {
-    visionStream.getTracks().forEach(t => t.stop());
-    visionStream = null;
-  }
-  video.srcObject = null;
-  document.getElementById("visionStatus").textContent = "";
-}
-async function captureVisionFrame() {
-  const video = document.getElementById("visionVideo");
-  const canvas = document.getElementById("visionCanvas");
-  const status = document.getElementById("visionStatus");
-  canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
-  status.textContent = "Analyzing…";
-  // Get base64 JPEG
-  canvas.toBlob(async blob => {
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      let b64 = reader.result.split(",")[1];
-      // Send to /vision endpoint
-      try {
-        const res = await fetch("/vision", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image: b64, mime_type: "image/jpeg" })
-        });
-        const data = await res.json();
-        closeVisionModal();
-        if (data.description) {
-          bubble.innerHTML = `<em>${data.description}</em>`;
-          await pearlSpeak(data.description);
-        } else {
-          bubble.innerHTML = "Well sugar, I couldn't see anything!";
-        }
-      } catch (err) {
-        closeVisionModal();
-        bubble.innerHTML = "Oh my, something went wrong with my vision!";
-      }
-    };
-    reader.readAsDataURL(blob);
-  }, "image/jpeg", 0.92);
-}
 </script>
 </body>
 </html>
