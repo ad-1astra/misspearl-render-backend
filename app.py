@@ -240,7 +240,7 @@ def clean_text_for_tts(text: str) -> str:
 
 
 def _build_fallback(message: str, joke=None, kb_answer: str | None = None) -> str:
-    """Return a scripted reply used when Ollama is unreachable."""
+    """Return a wise scripted reply used when Ollama is unreachable."""
     if kb_answer:
         return (
             f"Well now, dear, while my main brain is catching its breath, "
@@ -258,6 +258,14 @@ def _build_fallback(message: str, joke=None, kb_answer: str | None = None) -> st
         return (
             "Pearl AI Labs is building Uganda's AI future — and I'm the face of it, Dear! "
             "Created by the brilliant Paul and Mr. Divid, we are leading Africa's tech revolution from Kampala!"
+        )
+    if any(w in msg for w in ["what can you do", "what are you", "who are you", "abilities", "capability", "capable"]):
+        return (
+            "Well now, dear, let me tell you what makes Miss Pearl special! I'm a brilliant AI intellect "
+            "from Pearl AI Labs in Kampala, Uganda. I can answer questions on science, math, history, coding, "
+            "medicine, law, philosophy, technology, and so much more. I speak with warmth and wit, and I'm here "
+            "to help you with accurate, thoughtful answers while keeping things delightfully charming. "
+            "Ask me anything, and I shall deliver wisdom with a smile!"
         )
     return (
         "Well now, dear — it seems I'm having a little trouble connecting to my brain! "
