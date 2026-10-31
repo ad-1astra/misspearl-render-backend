@@ -1,0 +1,10 @@
+{
+  "final_heldout": {
+    "per": 0.0895,
+    "per_no_stress": 0.0694,
+    "word_acc": 0.6256
+  },
+  "params": 818630,
+  "train_words": 121179,
+  "val_words": 3747
+}

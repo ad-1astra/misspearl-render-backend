@@ -1,0 +1,438 @@
+{
+ "format": "pearl-nn-1",
+ "bin": "audio2viseme.bin",
+ "config": {
+  "sr": 16000,
+  "win": 400,
+  "hop": 160,
+  "n_fft": 512,
+  "n_mels": 64,
+  "fmin": 50.0,
+  "fmax": 8000.0,
+  "log_eps": 1e-05,
+  "window": "hann-periodic",
+  "channels": 80,
+  "dilations": [
+   1,
+   2,
+   4,
+   8,
+   1,
+   2,
+   4,
+   8
+  ],
+  "visemes": [
+   "sil",
+   "PP",
+   "FF",
+   "TH",
+   "DD",
+   "kk",
+   "CH",
+   "SS",
+   "nn",
+   "RR",
+   "aa",
+   "E",
+   "ih",
+   "oh",
+   "ou"
+  ],
+  "aux_phones": [
+   "SIL",
+   "AA",
+   "AE",
+   "AH",
+   "AO",
+   "AW",
+   "AY",
+   "B",
+   "CH",
+   "D",
+   "DH",
+   "EH",
+   "ER",
+   "EY",
+   "F",
+   "G",
+   "HH",
+   "IH",
+   "IY",
+   "JH",
+   "K",
+   "L",
+   "M",
+   "N",
+   "NG",
+   "OW",
+   "OY",
+   "P",
+   "R",
+   "S",
+   "SH",
+   "T",
+   "TH",
+   "UH",
+   "UW",
+   "V",
+   "W",
+   "Y",
+   "Z",
+   "ZH"
+  ],
+  "params": 228695,
+  "metrics": {
+   "viseme_acc": 0.836,
+   "viseme_macro_f1": 0.8352,
+   "viseme_acc_tol20ms": 0.9099,
+   "phone_acc": 0.8061,
+   "per_viseme_f1": {
+    "sil": 0.835,
+    "PP": 0.845,
+    "FF": 0.835,
+    "TH": 0.83,
+    "DD": 0.825,
+    "kk": 0.86,
+    "CH": 0.857,
+    "SS": 0.884,
+    "nn": 0.811,
+    "RR": 0.826,
+    "aa": 0.826,
+    "E": 0.851,
+    "ih": 0.847,
+    "oh": 0.785,
+    "ou": 0.81
+   }
+  },
+  "metrics_noisy_15db": {
+   "viseme_acc": 0.7769,
+   "viseme_acc_tol20ms": 0.8556
+  },
+  "best_step": 9000,
+  "env": {
+   "python": "3.13.16",
+   "torch": "2.11.0+cu130",
+   "cuda": true,
+   "gpu": "Tesla T4"
+  }
+ },
+ "tensors": {
+  "mel_fb": {
+   "dtype": "f32",
+   "shape": [
+    64,
+    257
+   ],
+   "offset": 0
+  },
+  "feat_mean": {
+   "dtype": "f32",
+   "shape": [
+    64
+   ],
+   "offset": 65792
+  },
+  "feat_std": {
+   "dtype": "f32",
+   "shape": [
+    64
+   ],
+   "offset": 66048
+  },
+  "inp.w": {
+   "dtype": "f32",
+   "shape": [
+    80,
+    64,
+    3
+   ],
+   "offset": 66304
+  },
+  "inp.b": {
+   "dtype": "f32",
+   "shape": [
+    80
+   ],
+   "offset": 127744
+  },
+  "b0.conv.w": {
+   "dtype": "f32",
+   "shape": [
+    80,
+    80,
+    3
+   ],
+   "offset": 128064
+  },
+  "b0.conv.b": {
+   "dtype": "f32",
+   "shape": [
+    80
+   ],
+   "offset": 204864
+  },
+  "b0.pw.w": {
+   "dtype": "f32",
+   "shape": [
+    80,
+    80
+   ],
+   "offset": 205184
+  },
+  "b0.pw.b": {
+   "dtype": "f32",
+   "shape": [
+    80
+   ],
+   "offset": 230784
+  },
+  "b1.conv.w": {
+   "dtype": "f32",
+   "shape": [
+    80,
+    80,
+    3
+   ],
+   "offset": 231104
+  },
+  "b1.conv.b": {
+   "dtype": "f32",
+   "shape": [
+    80
+   ],
+   "offset": 307904
+  },
+  "b1.pw.w": {
+   "dtype": "f32",
+   "shape": [
+    80,
+    80
+   ],
+   "offset": 308224
+  },
+  "b1.pw.b": {
+   "dtype": "f32",
+   "shape": [
+    80
+   ],
+   "offset": 333824
+  },
+  "b2.conv.w": {
+   "dtype": "f32",
+   "shape": [
+    80,
+    80,
+    3
+   ],
+   "offset": 334144
+  },
+  "b2.conv.b": {
+   "dtype": "f32",
+   "shape": [
+    80
+   ],
+   "offset": 410944
+  },
+  "b2.pw.w": {
+   "dtype": "f32",
+   "shape": [
+    80,
+    80
+   ],
+   "offset": 411264
+  },
+  "b2.pw.b": {
+   "dtype": "f32",
+   "shape": [
+    80
+   ],
+   "offset": 436864
+  },
+  "b3.conv.w": {
+   "dtype": "f32",
+   "shape": [
+    80,
+    80,
+    3
+   ],
+   "offset": 437184
+  },
+  "b3.conv.b": {
+   "dtype": "f32",
+   "shape": [
+    80
+   ],
+   "offset": 513984
+  },
+  "b3.pw.w": {
+   "dtype": "f32",
+   "shape": [
+    80,
+    80
+   ],
+   "offset": 514304
+  },
+  "b3.pw.b": {
+   "dtype": "f32",
+   "shape": [
+    80
+   ],
+   "offset": 539904
+  },
+  "b4.conv.w": {
+   "dtype": "f32",
+   "shape": [
+    80,
+    80,
+    3
+   ],
+   "offset": 540224
+  },
+  "b4.conv.b": {
+   "dtype": "f32",
+   "shape": [
+    80
+   ],
+   "offset": 617024
+  },
+  "b4.pw.w": {
+   "dtype": "f32",
+   "shape": [
+    80,
+    80
+   ],
+   "offset": 617344
+  },
+  "b4.pw.b": {
+   "dtype": "f32",
+   "shape": [
+    80
+   ],
+   "offset": 642944
+  },
+  "b5.conv.w": {
+   "dtype": "f32",
+   "shape": [
+    80,
+    80,
+    3
+   ],
+   "offset": 643264
+  },
+  "b5.conv.b": {
+   "dtype": "f32",
+   "shape": [
+    80
+   ],
+   "offset": 720064
+  },
+  "b5.pw.w": {
+   "dtype": "f32",
+   "shape": [
+    80,
+    80
+   ],
+   "offset": 720384
+  },
+  "b5.pw.b": {
+   "dtype": "f32",
+   "shape": [
+    80
+   ],
+   "offset": 745984
+  },
+  "b6.conv.w": {
+   "dtype": "f32",
+   "shape": [
+    80,
+    80,
+    3
+   ],
+   "offset": 746304
+  },
+  "b6.conv.b": {
+   "dtype": "f32",
+   "shape": [
+    80
+   ],
+   "offset": 823104
+  },
+  "b6.pw.w": {
+   "dtype": "f32",
+   "shape": [
+    80,
+    80
+   ],
+   "offset": 823424
+  },
+  "b6.pw.b": {
+   "dtype": "f32",
+   "shape": [
+    80
+   ],
+   "offset": 849024
+  },
+  "b7.conv.w": {
+   "dtype": "f32",
+   "shape": [
+    80,
+    80,
+    3
+   ],
+   "offset": 849344
+  },
+  "b7.conv.b": {
+   "dtype": "f32",
+   "shape": [
+    80
+   ],
+   "offset": 926144
+  },
+  "b7.pw.w": {
+   "dtype": "f32",
+   "shape": [
+    80,
+    80
+   ],
+   "offset": 926464
+  },
+  "b7.pw.b": {
+   "dtype": "f32",
+   "shape": [
+    80
+   ],
+   "offset": 952064
+  },
+  "vis.w": {
+   "dtype": "f32",
+   "shape": [
+    15,
+    80
+   ],
+   "offset": 952384
+  },
+  "vis.b": {
+   "dtype": "f32",
+   "shape": [
+    15
+   ],
+   "offset": 957184
+  },
+  "ph.w": {
+   "dtype": "f32",
+   "shape": [
+    40,
+    80
+   ],
+   "offset": 957244
+  },
+  "ph.b": {
+   "dtype": "f32",
+   "shape": [
+    40
+   ],
+   "offset": 970044
+  }
+ }
+}

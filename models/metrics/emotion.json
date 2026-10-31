@@ -1,0 +1,9 @@
+{
+  "final": {
+    "teacher_agreement": 0.7217,
+    "gold_acc_dair": 0.823
+  },
+  "teacher_gold_acc": 0.8936,
+  "sentences": 114906,
+  "vocab": 12000
+}

@@ -227,7 +227,7 @@ let models = {};
   chip.className = ok.length >= 5 ? "chip ok" : "chip warn";
   const mi = [];
   if (out.lexicon) mi.push(`lexicon ${out.lexicon.size.toLocaleString()} words`);
-  const m = (o) => (o && o.config && o.config.metrics) || {};
+  const m = (o) => (o && (o.cfg || o.config) && (o.cfg || o.config).metrics) || {};
   if (out.g2p) mi.push(`neural G2P (${(100 * (1 - (m(out.g2p).per ?? 0))).toFixed(1)}% phones right on unseen words)`);
   if (out.a2v) mi.push(`audio→viseme net (${(100 * (m(out.a2v).viseme_acc_tol20ms ?? m(out.a2v).viseme_acc ?? 0)).toFixed(1)}% frames ±20 ms on unseen voices)`);
   if (out.emotion) mi.push(`emotion net (${(100 * (m(out.emotion).teacher_agreement ?? 0)).toFixed(1)}% agreement with RoBERTa teacher)`);

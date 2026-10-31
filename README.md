@@ -29,7 +29,13 @@ audio ──── audio→viseme network (trained) ─→ per-frame viseme prob
 Trained in Google Colab with [`training/MissPearl_LipSync_Training.ipynb`](training/MissPearl_LipSync_Training.ipynb);
 everything (corpus, checkpoints, exports) is saved to Google Drive → `MyDrive/MissPearl-LipSync/`.
 
-MODEL_TABLE
+| Model | Trained on | Result (held-out data) | Size |
+|---|---|---|---|
+| **audio → viseme** (`audio2viseme`) — 8-block dilated TCN on 64-band log-mel, ±310 ms context, 100 fps | 6.12 h of speech rendered by Kokoro-82M in 24 voices × random speeds, labelled frame-by-frame from Kokoro's own phoneme durations (3,832 utterances in total), with noise / reverb / gain / band-limit augmentation | **83.6%** frame accuracy over 15 visemes, **91.0%** within ±20 ms, macro-F1 0.835 — on 547 utterances from **4 voices never heard in training**; 77.7% at 15 dB SNR noise | 228,695 params |
+| **G2P** (`g2p`) — 4-layer Transformer, CTC, letters×3 | CMU Pronouncing Dictionary (121,179 words) | phone error rate **8.9%** (6.9% ignoring stress), **62.6%** of 3,747 unseen words perfect | 818,630 params |
+| **emotion** (`emotion`) — bag-of-n-grams MLP, int8 | 114,906 sentences (GoEmotions, dair-ai/emotion, OpenAssistant, Wikipedia) soft-labelled by `j-hartmann/emotion-english-distilroberta-base` | **72.2%** agreement with the RoBERTa teacher; 82.3% on human-labelled dair-ai/emotion (teacher: 89.4%) | ~1 MB |
+| durations (`durations.json`) | median phone & pause lengths measured in the Kokoro corpus | drives the text-only timeline | — |
+
 
 Each exporter checks that the exported maths matches PyTorch, and `node tests/verify_models.mjs`
 checks that the **browser** runtime reproduces PyTorch's outputs on the same inputs.
