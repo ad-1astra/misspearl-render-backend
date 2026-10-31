@@ -223,6 +223,17 @@ def main():
         print(f"Dataset already exists at {data} — skipping generation.")
         return
 
+    # Kokoro may live in a separate interpreter (see colab_setup.py)
+    try:
+        import kokoro  # noqa: F401
+    except ImportError:
+        import os
+        kpy = os.environ.get("KOKORO_PY")
+        if kpy and os.path.realpath(kpy) != os.path.realpath(sys.executable) and os.path.exists(kpy):
+            print(f"re-launching under {kpy} (Kokoro environment)", flush=True)
+            os.execv(kpy, [kpy] + sys.argv)
+        raise
+
     import torch
     from scipy.signal import resample_poly
     from kokoro import KModel, KPipeline

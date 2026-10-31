@@ -48,17 +48,10 @@ EXPORT     = f'{BASE}/export'           # browser-ready models
 CKPT       = f'{BASE}/checkpoints'
 for d in (EXPORT, CKPT): os.makedirs(d, exist_ok=True)
 os.environ['PYTHONUNBUFFERED'] = '1'"""),
-    (CODE, """#@title 3 · Get the training code and install Kokoro TTS
-REPO = 'https://github.com/ad-1astra/misspearl-render-backend.git'
-if os.path.exists('/content/mp/.git'):
-    run('git -C /content/mp pull -q')
-else:
-    run(f'git clone -q {REPO} /content/mp')
-run('git -C /content/mp log --oneline -1')
-run('apt-get -qq -y install espeak-ng > /dev/null 2>&1 || true')
-run('pip install -q "kokoro>=0.9.4" soundfile || pip install -q --ignore-requires-python "kokoro>=0.9.4" soundfile')
-run('pip install -q datasets transformers matplotlib')
-T = '/content/mp/training'"""),
+    (CODE, """#@title 3 · Get the training code and install Kokoro TTS (isolated Python 3.12 env if needed)
+if not os.path.exists('/content/mp/.git'):
+    run('git clone -q https://github.com/ad-1astra/misspearl-render-backend.git /content/mp')
+%run -i /content/mp/training/colab_setup.py"""),
     (CODE, """#@title 4 · Smoke test: render 6 sentences and check phoneme alignment
 run(f'python {T}/gen_audio_data.py --data /content/smoke --smoke')
 from IPython.display import Audio, display
