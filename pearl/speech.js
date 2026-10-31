@@ -257,7 +257,11 @@ export class Performer {
     const plan = planUtterance(perf.clean, this.pron, this.durations);
     const res = await fetch(`${api}/tts/timed`, { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: plan.spoken }) });
-    if (!res.ok) throw new Error(`tts/timed ${res.status}`);
+    if (!res.ok) {
+      let why = `tts/timed ${res.status}`;
+      try { why = (await res.json()).error || why; } catch {}
+      throw new Error(why);
+    }
     const data = await res.json();
     if (id !== this.queueId) return;
     const bytes = Uint8Array.from(atob(data.audio_base64), (c) => c.charCodeAt(0));

@@ -43,7 +43,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(encoding="utf-8-sig")   # tolerate a BOM (Windows editors add one)
 
 # ─────────────────────────────────────────────────────────────
 # CONFIG
@@ -633,6 +633,16 @@ async def text_to_speech_timed(body: TTSRequest):
             resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
             data = resp.json()
+    except httpx.HTTPStatusError as exc:
+        # surface ElevenLabs' own explanation (e.g. "Free users cannot use library voices via the API")
+        try:
+            detail = exc.response.json().get("detail", {})
+            reason = detail.get("message") if isinstance(detail, dict) else str(detail)
+        except Exception:
+            reason = exc.response.text[:200]
+        reason = re.sub(r"\s*:?\s*https?://\S+", "", reason or "").strip()
+        log.error("ElevenLabs timed TTS error %s: %s", exc.response.status_code, reason)
+        return JSONResponse({"error": f"ElevenLabs {exc.response.status_code}: {reason}"}, status_code=503)
     except Exception as exc:
         log.error("ElevenLabs timed TTS error: %s", exc)
         return JSONResponse({"error": "ElevenLabs TTS unavailable"}, status_code=503)

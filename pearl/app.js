@@ -55,6 +55,10 @@ function loop(t) {
 }
 requestAnimationFrame(loop);
 
+// Browsers keep audio suspended until the first user gesture: unlock it then.
+const unlockAudio = () => { if (performer) performer.ctx(); };
+["pointerdown", "keydown", "touchstart"].forEach((ev) => document.addEventListener(ev, unlockAudio, { passive: true }));
+
 document.addEventListener("pointermove", (e) => {
   const r = $("face").getBoundingClientRect();
   face.lookAtScreen(((e.clientX - (r.left + r.width / 2)) / (r.width / 2)) * 0.9, ((e.clientY - (r.top + r.height / 2)) / (r.height / 2)) * 0.8);
@@ -214,7 +218,7 @@ let models = {};
         $("moodSrc").textContent = emo.source === "llm-tag" ? "(LLM tag)" : emo.source === "model" ? "(emotion model)" : "";
       },
       onDone: () => {
-        highlight(1e9); $("status").textContent = "ready"; face.setState("idle"); setTimeout(() => { lastProbs = null; }, 1500);
+        highlight(1e9); $("status").textContent = ttsNote || "ready"; face.setState("idle"); setTimeout(() => { lastProbs = null; }, 1500);
         const nw = [...pron.neuralWords.entries()].slice(-4);
         $("pronInfo").textContent = `Pronunciation so far: ${pron.stats.lexicon} words from the CMU dictionary, ${pron.stats.neural} invented by the neural G2P` +
           (nw.length ? ` (${nw.map(([w, p]) => `${w} → ${p.join(" ")}`).join(", ")})` : "") + ".";
@@ -236,13 +240,18 @@ let models = {};
 })();
 
 // ── speaking ─────────────────────────────────────────────────
+let ttsNote = "";
 async function speak(text) {
   if (!performer || !text.trim()) return;
   performer.stop();
   $("status").textContent = "speaking…";
   if (settings.engine === "backend" && backend.online && backend.tts) {
     try { await performer.speakBackend(text, settings.api); return; }
-    catch (e) { console.warn("[pearl] backend TTS failed, using browser voice", e); }
+    catch (e) {
+      console.warn("[pearl] backend TTS failed, using browser voice", e);
+      ttsNote = `ElevenLabs unavailable (${e.message}) — using the browser voice`;
+      $("status").textContent = ttsNote;
+    }
   }
   await performer.speakBrowser(text, { voice: pickVoice(), rate: +settings.rate, pitch: +settings.pitch });
 }
