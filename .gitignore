@@ -9,3 +9,6 @@ __pycache__/
 venv/
 # training scratch
 training/*.pt
+
+# generated benchmark audio (training/make_align_eval.py)
+tests/align_eval.json

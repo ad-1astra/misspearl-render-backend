@@ -6,7 +6,7 @@
 //   3. Behaviour: blinks, micro-saccades, gaze, breathing, speech nods & brow flashes
 //   4. Gestures: laugh, wink, nod, smirk, blush
 
-import { VISEMES } from "./text.js";
+import { VISEMES } from "./text.js?v=20261031b";
 
 const NS = "http://www.w3.org/2000/svg";
 const el = (tag, attrs = {}, parent) => {

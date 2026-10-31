@@ -50,7 +50,22 @@ load_dotenv(encoding="utf-8-sig")   # tolerate a BOM (Windows editors add one)
 # ─────────────────────────────────────────────────────────────
 
 ELEVENLABS_API_KEY  = os.getenv("ELEVENLABS_API_KEY", "")
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+
+# ElevenLabs' own default voices — usable over the API on every plan, including free.
+# Library / legacy voices (e.g. the old default "Rachel", 21m00Tcm4TlvDq8ikWAM) need a
+# paid plan; if the configured voice is refused, the backend falls back to these.
+EL_DEFAULT_VOICES = {
+    "cgSgspJ2msm6clMCkdW9": "Jessica — playful, bright, warm",
+    "EXAVITQu4vr4xnSDxMaL": "Sarah — mature, reassuring, confident",
+    "XrExE9yKIg1WjnnlVkGX": "Matilda — knowledgeable, professional",
+    "Xb7hH8MSUJpSbSDYk0k2": "Alice — clear, engaging educator (British)",
+    "FGY2WhTYpPnrIDTdsKH5": "Laura — enthusiastic, quirky",
+    "pFZP5JQG7iQjIQuC4Bku": "Lily — velvety actress (British)",
+}
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "").strip() or next(iter(EL_DEFAULT_VOICES))
+_VOICE_ID_RE = re.compile(r"^[A-Za-z0-9]{8,40}$")
+_el_refused: set[str] = set()      # voices this account may not use; skipped from then on
+_el_last_voice = ""                # the voice that last worked
 
 # Ollama config — override via .env if needed
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -248,6 +263,7 @@ class ChatRequest(BaseModel):
 class TTSRequest(BaseModel):
     text: str
     lang: str = "en"
+    voice_id: str = ""   # optional; empty = ELEVENLABS_VOICE_ID
 
 
 # ─────────────────────────────────────────────────────────────
@@ -492,24 +508,76 @@ async def pearl_chat(message: str, history: list[dict]) -> str:
 
 
 
-async def elevenlabs_tts(text: str) -> bytes:
-    """Call ElevenLabs TTS and return raw MP3 bytes (empty on failure)."""
-    if not ELEVENLABS_API_KEY or not text:
-        return b""
+def _el_error(resp: httpx.Response) -> tuple[str, str]:
+    """(code, human message) from an ElevenLabs error response, URLs stripped."""
+    try:
+        detail = resp.json().get("detail", {})
+    except Exception:
+        return "", resp.text[:200]
+    if isinstance(detail, dict):
+        code, msg = str(detail.get("code") or detail.get("status") or ""), str(detail.get("message") or "")
+    else:
+        code, msg = "", str(detail)
+    return code, re.sub(r"\s*:?\s*https?://\S+", "", msg).strip()
 
-    url     = EL_TTS_URL.format(voice_id=ELEVENLABS_VOICE_ID)
+
+def _voice_refused(resp: httpx.Response) -> bool:
+    """True when ElevenLabs refuses this *voice* (not the key / quota / text)."""
+    code, msg = _el_error(resp)
+    return (resp.status_code == 402 and ("voice" in msg.lower() or code == "paid_plan_required")) or \
+           (resp.status_code in (400, 404) and "voice" in (code + msg).lower())
+
+
+async def elevenlabs_request(text: str, voice_id: str = "", timed: bool = False) -> tuple[httpx.Response, str]:
+    """
+    POST text to ElevenLabs TTS and return (response, voice_id_used).
+    Tries the requested voice, then ELEVENLABS_VOICE_ID, then ElevenLabs' default voices,
+    so Miss Pearl always speaks with *some* voice the account is allowed to use.
+    Raises httpx.HTTPStatusError for any other failure.
+    """
+    global _el_last_voice
+    order: list[str] = []
+    for v in (voice_id, _el_last_voice, ELEVENLABS_VOICE_ID, *EL_DEFAULT_VOICES):
+        if v and _VOICE_ID_RE.match(v) and v not in order and v not in _el_refused:
+            order.append(v)
     payload = {
         "text":     text,
         "model_id": "eleven_multilingual_v2",
         "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
     }
-    headers = {**EL_HEADERS, "Content-Type": "application/json", "Accept": "audio/mpeg"}
+    headers = {**EL_HEADERS, "Content-Type": "application/json",
+               "Accept": "application/json" if timed else "audio/mpeg"}
+    suffix = "/with-timestamps" if timed else ""
+    last = None
+    async with httpx.AsyncClient(timeout=60) as client:
+        for v in order:
+            resp = await client.post(f"{EL_BASE}/text-to-speech/{v}{suffix}", json=payload, headers=headers)
+            if resp.status_code < 400:
+                if v != _el_last_voice:
+                    log.info("ElevenLabs voice in use: %s (%s)", v, EL_DEFAULT_VOICES.get(v, "custom"))
+                _el_last_voice = v
+                return resp, v
+            last = resp
+            if _voice_refused(resp):
+                _el_refused.add(v)
+                log.warning("ElevenLabs refused voice %s (%s) — trying the next one", v, _el_error(resp)[1])
+                continue
+            break
+    if last is None:
+        raise RuntimeError("no usable ElevenLabs voice")
+    last.raise_for_status()
+    raise RuntimeError("unreachable")
 
+
+async def elevenlabs_tts(text: str, voice_id: str = "") -> bytes:
+    """Call ElevenLabs TTS and return raw MP3 bytes (empty on failure)."""
+    if not ELEVENLABS_API_KEY or not text:
+        return b""
     try:
-        async with httpx.AsyncClient(timeout=45) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            return resp.content
+        resp, _ = await elevenlabs_request(text, voice_id)
+        return resp.content
+    except httpx.HTTPStatusError as exc:
+        log.error("ElevenLabs TTS error %s: %s", exc.response.status_code, _el_error(exc.response)[1])
     except Exception as exc:
         log.error("ElevenLabs TTS error: %s", exc)
     return b""
@@ -591,7 +659,7 @@ async def text_to_speech(body: TTSRequest):
     if not clean:
         return JSONResponse({"error": "No text provided"}, status_code=400)
 
-    mp3_bytes = await elevenlabs_tts(clean)
+    mp3_bytes = await elevenlabs_tts(clean, body.voice_id)
     if not mp3_bytes:
         return JSONResponse(
             {"error": "ElevenLabs TTS unavailable. Check ELEVENLABS_API_KEY / ELEVENLABS_VOICE_ID."},
@@ -621,26 +689,12 @@ async def text_to_speech_timed(body: TTSRequest):
     if not ELEVENLABS_API_KEY:
         return JSONResponse({"error": "ELEVENLABS_API_KEY not set"}, status_code=503)
 
-    url = f"{EL_BASE}/text-to-speech/{ELEVENLABS_VOICE_ID}/with-timestamps"
-    payload = {
-        "text": text,
-        "model_id": "eleven_multilingual_v2",
-        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
-    }
-    headers = {**EL_HEADERS, "Content-Type": "application/json"}
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
+        resp, voice = await elevenlabs_request(text, body.voice_id, timed=True)
+        data = resp.json()
     except httpx.HTTPStatusError as exc:
-        # surface ElevenLabs' own explanation (e.g. "Free users cannot use library voices via the API")
-        try:
-            detail = exc.response.json().get("detail", {})
-            reason = detail.get("message") if isinstance(detail, dict) else str(detail)
-        except Exception:
-            reason = exc.response.text[:200]
-        reason = re.sub(r"\s*:?\s*https?://\S+", "", reason or "").strip()
+        # surface ElevenLabs' own explanation (e.g. quota exceeded)
+        reason = _el_error(exc.response)[1]
         log.error("ElevenLabs timed TTS error %s: %s", exc.response.status_code, reason)
         return JSONResponse({"error": f"ElevenLabs {exc.response.status_code}: {reason}"}, status_code=503)
     except Exception as exc:
@@ -651,7 +705,18 @@ async def text_to_speech_timed(body: TTSRequest):
         "audio_base64": data.get("audio_base64", ""),
         "alignment": data.get("alignment") or data.get("normalized_alignment"),
         "text": text,
+        "voice_id": voice,
+        "voice_name": EL_DEFAULT_VOICES.get(voice, "custom voice").split(" — ")[0],
     })
+
+
+@app.get("/voices")
+async def list_voices():
+    """ElevenLabs voices this backend can use (the free-plan-safe defaults + the configured one)."""
+    voices = [{"id": k, "name": v} for k, v in EL_DEFAULT_VOICES.items() if k not in _el_refused]
+    if ELEVENLABS_VOICE_ID not in EL_DEFAULT_VOICES and ELEVENLABS_VOICE_ID not in _el_refused:
+        voices.insert(0, {"id": ELEVENLABS_VOICE_ID, "name": "Configured voice (ELEVENLABS_VOICE_ID)"})
+    return JSONResponse({"configured": ELEVENLABS_VOICE_ID, "active": _el_last_voice or None, "voices": voices})
 
 
 @app.websocket("/audio/ws")
@@ -741,6 +806,8 @@ async def health():
         "elevenlabs": {
             "key_set":         bool(ELEVENLABS_API_KEY),
             "voice_id":        ELEVENLABS_VOICE_ID,
+            "active_voice":    _el_last_voice or None,
+            "refused_voices":  sorted(_el_refused),
         },
         "tts_timed":           True,
         "face_models":         sorted(p.name for p in (_HERE / "models").glob("*.json")) if (_HERE / "models").is_dir() else [],

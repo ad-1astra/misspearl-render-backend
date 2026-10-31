@@ -1,9 +1,9 @@
 // Miss Pearl — app wiring: models, face loop, UI, backend.
-import { Audio2Viseme, EmotionModel, G2P } from "./nn.js";
-import { Durations, Lexicon, Pronouncer, VISEMES } from "./text.js";
-import { Face } from "./face.js";
-import { FeatureExtractor, StreamingVisemes } from "./audio.js";
-import { Performer } from "./speech.js";
+import { Audio2Viseme, EmotionModel, G2P } from "./nn.js?v=20261031b";
+import { Durations, Lexicon, Pronouncer, VISEMES } from "./text.js?v=20261031b";
+import { Face } from "./face.js?v=20261031b";
+import { FeatureExtractor, StreamingVisemes } from "./audio.js?v=20261031b";
+import { Performer } from "./speech.js?v=20261031b";
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -133,7 +133,8 @@ function highlight(globalChar) {
 // ── settings ─────────────────────────────────────────────────
 const params = new URLSearchParams(location.search);
 const settings = {
-  engine: store.get("engine", "browser"), voice: store.get("voice", ""), rate: store.get("rate", 1), pitch: store.get("pitch", 1.1),
+  engine: store.get("engine", "auto"), voice: store.get("voice", ""), elVoice: store.get("elVoice", ""),
+  rate: store.get("rate", 1), pitch: store.get("pitch", 1.1),
   api: params.get("api") ?? store.get("api", /github\.io$/.test(location.hostname) || location.protocol === "file:" ? "" : location.origin),
   lead: store.get("lead", 45),
 };
@@ -161,6 +162,21 @@ $("openSettings").onclick = () => $("settings").showModal();
 $("closeSettings").onclick = () => { $("settings").close(); checkBackend(); };
 $("engineSel").onchange = (e) => store.set("engine", (settings.engine = e.target.value));
 $("voiceSel").onchange = (e) => store.set("voice", (settings.voice = e.target.value));
+$("elVoiceSel").onchange = (e) => store.set("elVoice", (settings.elVoice = e.target.value));
+async function fillElVoices() {
+  const sel = $("elVoiceSel");
+  try {
+    const r = await fetch(`${settings.api}/voices`);
+    if (!r.ok) return;
+    const v = await r.json();
+    sel.innerHTML = "";
+    const def = document.createElement("option"); def.value = ""; def.textContent = "Backend default"; sel.appendChild(def);
+    for (const x of v.voices || []) {
+      const o = document.createElement("option"); o.value = x.id; o.textContent = x.name; sel.appendChild(o);
+    }
+    sel.value = [...sel.options].some((o) => o.value === settings.elVoice) ? settings.elVoice : "";
+  } catch {}
+}
 $("rate").oninput = (e) => { store.set("rate", (settings.rate = +e.target.value)); $("rateVal").textContent = settings.rate.toFixed(2); };
 $("pitch").oninput = (e) => { store.set("pitch", (settings.pitch = +e.target.value)); $("pitchVal").textContent = settings.pitch.toFixed(2); };
 $("apiUrl").onchange = (e) => store.set("api", (settings.api = e.target.value.trim().replace(/\/$/, "")));
@@ -176,6 +192,7 @@ async function checkBackend(verbose = false) {
     const h = await r.json();
     backend = { online: true, tts: !!(h.elevenlabs && h.elevenlabs.key_set), timed: !!h.tts_timed };
     chip.textContent = `brain: ${h.active_ai_provider || "online"}${backend.tts ? " + ElevenLabs" : ""}`; chip.className = "chip ok";
+    if (backend.tts) fillElVoices();
   } catch (e) {
     backend = { online: false, tts: false };
     chip.textContent = "brain: offline demo"; chip.className = "chip warn";
@@ -245,8 +262,8 @@ async function speak(text) {
   if (!performer || !text.trim()) return;
   performer.stop();
   $("status").textContent = "speaking…";
-  if (settings.engine === "backend" && backend.online && backend.tts) {
-    try { await performer.speakBackend(text, settings.api); return; }
+  if (settings.engine !== "browser" && backend.online && backend.tts) {
+    try { await performer.speakBackend(text, settings.api, settings.elVoice); ttsNote = ""; return; }
     catch (e) {
       console.warn("[pearl] backend TTS failed, using browser voice", e);
       ttsNote = `ElevenLabs unavailable (${e.message}) — using the browser voice`;

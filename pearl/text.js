@@ -364,10 +364,80 @@ export function retimeWithAlignment(plan, alignment, offset = 0) {
     ps.forEach((p) => { const d = ((p.t1 - p.t0) / tot) * (t1 - t0); p.t0 = t; p.t1 = t + d; t += d; });
     wd.start = t0; wd.end = t1;
   });
+  // Connected speech has no rests between words: the timestamps leave short gaps
+  // (the space characters) that would otherwise drop the mouth to "sil" mid-phrase.
+  // Split each gap between the end of one word and the start of the next (which also
+  // lets a following P/B/M close the lips early, as real speakers do). Gaps at
+  // punctuation, and long hesitations, stay as real pauses.
+  plan.words.forEach((wd, wi) => {
+    const nx = plan.words[wi + 1];
+    if (!nx || wd.pauseAfter) return;
+    const gap = nx.start - wd.end;
+    if (gap <= 0 || gap > 0.3) return;
+    const a = byWord.get(wi), b = byWord.get(wi + 1);
+    if (a && a.length) a[a.length - 1].t1 += gap / 2;
+    if (b && b.length) b[0].t0 -= gap / 2;
+  });
   plan.duration = Math.max(plan.duration, (en[n - 1] || 0) + offset + 0.1);
   plan.visemes = phonesToVisemes(plan.phones, plan.words, plan.duration);
   plan.aligned = true;
   return plan;
+}
+
+/**
+ * Refine a plan's viseme timing with the trained audio→viseme network.
+ *
+ * The text tells us *which* mouth shapes happen and in what order; the network,
+ * listening to the actual audio, knows best *when* each one happens. This is a
+ * forced alignment (Viterbi): the plan's viseme sequence is matched against the
+ * network's per-frame probabilities, each viseme staying within `band` seconds of
+ * where the TTS timestamps put it (so the result can never drift off the words),
+ * with a gentle pull (`prior` per frame) toward that position.
+ * Benchmark (tests/eval_alignment.mjs, 80 utterances, 4 unseen voices, exact
+ * ground truth): 64.1% → 78.1% of frames exact; with ±40 ms noisy timestamps
+ * 50.6% → 78%. Band/prior were tuned on that benchmark.
+ *
+ * frames: per-frame probability arrays in VISEMES order (from analyzeClip).
+ * Returns true if the plan was refined.
+ */
+export function refineWithAudio(plan, frames, fps = 100, band = 0.4, prior = 0.08) {
+  const ev = plan.visemes, N = ev.length, T = frames.length;
+  if (!N || T < N) return false;
+  const vi = ev.map((e) => Math.max(0, VISEMES.indexOf(e.v)));
+  const B = Math.round(band * fps);
+  const lo = ev.map((e, i) => (i === 0 ? 0 : Math.max(0, Math.floor(e.t0 * fps) - B)));
+  const hi = ev.map((e, i) => (i === N - 1 ? T - 1 : Math.min(T - 1, Math.ceil(e.t1 * fps) + B)));
+  const emit = (i, t) => {
+    const a = ev[i].t0 * fps, b = ev[i].t1 * fps;
+    const out = t < a ? a - t : t > b ? t - b : 0;          // frames outside the expected span
+    return Math.log(frames[t][vi[i]] + 0.01) - prior * out;
+  };
+  const NEG = -1e30;
+  let prev = new Float64Array(N).fill(NEG), cur = new Float64Array(N);
+  const back = new Uint8Array(N * T);                      // 1 = advanced into state i at frame t
+  prev[0] = emit(0, 0);
+  for (let t = 1; t < T; t++) {
+    cur.fill(NEG);
+    for (let i = 0; i < N; i++) {
+      if (t < lo[i] || t > hi[i]) continue;
+      const stay = prev[i], adv = i > 0 ? prev[i - 1] : NEG;
+      if (stay <= NEG && adv <= NEG) continue;
+      if (adv > stay) { cur[i] = adv + emit(i, t); back[i * T + t] = 1; }
+      else cur[i] = stay + emit(i, t);
+    }
+    [prev, cur] = [cur, prev];
+  }
+  if (prev[N - 1] <= NEG) return false;                    // no path inside the band: keep the timestamp timing
+  const start = new Int32Array(N);
+  let i = N - 1;
+  for (let t = T - 1; t > 0; t--) if (back[i * T + t]) { start[i] = t; i--; }
+  if (i !== 0) return false;
+  for (let k = 0; k < N; k++) {
+    ev[k].t0 = start[k] / fps;
+    ev[k].t1 = (k + 1 < N ? start[k + 1] : T) / fps;
+  }
+  plan.refined = true;
+  return true;
 }
 
 /** Locate the word whose spoken-string span contains charIndex. */

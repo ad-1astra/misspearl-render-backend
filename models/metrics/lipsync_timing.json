@@ -1,0 +1,33 @@
+{
+  "utterances": 80,
+  "timestamps only": {
+    "exact": 0.6412,
+    "tol20ms": 0.7623,
+    "closures_within_30ms": 0.7838,
+    "median_closure_error_ms": 10
+  },
+  "timestamps + audio net": {
+    "exact": 0.7809,
+    "tol20ms": 0.9154,
+    "closures_within_30ms": 0.9324,
+    "median_closure_error_ms": 10
+  },
+  "noisy timestamps only": {
+    "exact": 0.5058,
+    "tol20ms": 0.6697,
+    "closures_within_30ms": 0.5101,
+    "median_closure_error_ms": 25
+  },
+  "noisy timestamps + audio": {
+    "exact": 0.7777,
+    "tol20ms": 0.9119,
+    "closures_within_30ms": 0.9291,
+    "median_closure_error_ms": 10
+  },
+  "audio net alone": {
+    "exact": 0.8012,
+    "tol20ms": 0.8782,
+    "closures_within_30ms": 0.9628,
+    "median_closure_error_ms": 5
+  }
+}

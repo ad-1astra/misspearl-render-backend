@@ -222,9 +222,12 @@
     <h2>Settings</h2>
     <label for="engineSel">Voice engine</label>
     <select id="engineSel">
-      <option value="browser">Browser voice (works everywhere)</option>
+      <option value="auto">Auto — ElevenLabs when the backend has it, else browser voice</option>
+      <option value="browser">Browser voice only (works everywhere)</option>
       <option value="backend">ElevenLabs via backend (needs app.py)</option>
     </select>
+    <label for="elVoiceSel">ElevenLabs voice</label>
+    <select id="elVoiceSel"><option value="">Backend default</option></select>
     <label for="voiceSel">Browser voice</label>
     <select id="voiceSel"></select>
     <label for="rate">Speaking rate <span id="rateVal">1.0</span></label>
@@ -238,6 +241,6 @@
     <div class="row"><button class="btn green" id="testApi">Test backend</button><button class="btn" id="closeSettings">Done</button></div>
   </dialog>
 
-  <script type="module" src="pearl/app.js"></script>
+  <script type="module" src="pearl/app.js?v=20261031b"></script>
 </body>
 </html>

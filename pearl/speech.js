@@ -5,13 +5,14 @@
 //   browser  : SpeechSynthesis. Text-driven viseme timeline, re-anchored at
 //              every word-boundary event and rate-calibrated per voice.
 //   backend  : ElevenLabs via app.py /tts/timed. Character-level alignment
-//              gives each word its true start/end → phones placed inside.
+//              gives each word its true start/end; the audio→viseme network
+//              then places every mouth shape on the real audio (forced alignment).
 //   audio    : any audio (TTS without timings, files, mic). The trained
 //              audio→viseme network reads the mouth shapes from the sound.
 
-import { parseTags, planUtterance, retimeWithAlignment, splitSentences, wordAtChar } from "./text.js";
-import { blendVisemeProbs, sampleTimeline, VISEME_SHAPES } from "./face.js";
-import { analyzeClip, loudness, to16kMono } from "./audio.js";
+import { parseTags, planUtterance, refineWithAudio, retimeWithAlignment, splitSentences, wordAtChar } from "./text.js?v=20261031b";
+import { blendVisemeProbs, sampleTimeline, VISEME_SHAPES } from "./face.js?v=20261031b";
+import { analyzeClip, loudness, to16kMono } from "./audio.js?v=20261031b";
 
 const now = () => performance.now() / 1000;
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -45,9 +46,15 @@ export class Performer {
     let probs = null, source = "model";
     if (this.emotionModel) probs = this.emotionModel.predict(sentence);
     const target = {};
+    // a gesture tag with no emotion tag still says how the sentence feels
+    const GESTURE_MOOD = { laugh: ["joy", 0.9], wink: ["joy", 0.5], blush: ["love", 0.6] };
+    const gestureMood = !tagEmo && marks.map((m) => GESTURE_MOOD[m.tag]).find(Boolean);
     if (tagEmo) {
       source = "llm-tag";
       target[tagEmo.tag] = 0.9;
+    } else if (gestureMood) {
+      source = "llm-tag";
+      target[gestureMood[0]] = gestureMood[1];
     } else if (probs) {
       const emotional = 1 - probs.neutral;
       for (const k of EMO_KEYS) {
@@ -250,13 +257,13 @@ export class Performer {
   }
 
   // ── Engine: backend ElevenLabs with timestamps ────────────
-  async speakBackend(text, api) {
+  async speakBackend(text, api, voiceId = "") {
     const id = ++this.queueId;
     const perf = this.prepare(text);
     this.hooks.onPerformance && this.hooks.onPerformance(perf);
     const plan = planUtterance(perf.clean, this.pron, this.durations);
     const res = await fetch(`${api}/tts/timed`, { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: plan.spoken }) });
+      body: JSON.stringify({ text: plan.spoken, voice_id: voiceId || "" }) });
     if (!res.ok) {
       let why = `tts/timed ${res.status}`;
       try { why = (await res.json()).error || why; } catch {}
@@ -268,6 +275,16 @@ export class Performer {
     const ctx = this.ctx();
     const buf = await ctx.decodeAudioData(bytes.buffer);
     if (data.alignment) retimeWithAlignment(plan, data.alignment);
+    // let the trained audio→viseme network place every mouth shape on the real audio
+    if (this.a2v && this.fx) {
+      try {
+        const t0 = performance.now();
+        const an = await analyzeClip(this.a2v, this.fx, await to16kMono(buf));
+        if (id !== this.queueId) return;
+        const ok = refineWithAudio(plan, an.frames, an.fps);
+        console.debug(`[pearl] audio refinement ${ok ? "applied" : "skipped"}: ${an.frames.length} frames in ${Math.round(performance.now() - t0)} ms`);
+      } catch (e) { console.warn("[pearl] audio refinement failed", e); }
+    }
     const mono = buf.getChannelData(0);
     const energy = loudness(mono, Math.round(buf.sampleRate / 100), Math.round(buf.sampleRate / 40));
     // sentence moods at their real start times
@@ -283,7 +300,8 @@ export class Performer {
         events.push({ t: Math.max(0, (plan.words[wi] ? plan.words[wi].start : 0) - 0.15), fire: ge.fire });
       }
     });
-    return this._playTimeline(plan, buf, energy, events, "ElevenLabs + character alignment", id);
+    this.lastVoice = data.voice_name || "";
+    return this._playTimeline(plan, buf, energy, events, `ElevenLabs${data.voice_name ? ` (${data.voice_name})` : ""} + character alignment`, id);
   }
 
   _playTimeline(plan, buf, energy, events, source, id) {
@@ -294,7 +312,8 @@ export class Performer {
       src.connect(this.analyser);
       const start = ctx.currentTime + 0.05;
       const d = { kind: "timeline", plan, src, energy, energyOffset: 0, events, source, hint: 0, lastWord: -1,
-        clock: () => ctx.currentTime - start, syncLabel: () => plan.aligned ? "sample-accurate (TTS alignment)" : "audio clock",
+        clock: () => ctx.currentTime - start,
+        syncLabel: () => plan.refined ? "TTS timestamps + audio network" : plan.aligned ? "TTS timestamps" : "audio clock",
         onWord: (wi) => this.hooks.onWord && this.hooks.onWord(-1, wi, plan), resolve };
       src.onended = () => { this._finish(d); if (id === this.queueId) this.hooks.onDone && this.hooks.onDone(); };
       this.active = d;
