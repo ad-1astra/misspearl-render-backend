@@ -1,0 +1,11 @@
+# secrets — never commit
+.env
+.env.*
+# local runtime state
+*.db
+__pycache__/
+*.pyc
+.venv/
+venv/
+# training scratch
+training/*.pt
