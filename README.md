@@ -37,8 +37,13 @@ everything (corpus, checkpoints, exports) is saved to Google Drive → `MyDrive/
 | durations (`durations.json`) | median phone & pause lengths measured in the Kokoro corpus | drives the text-only timeline | — |
 
 
-Each exporter checks that the exported maths matches PyTorch, and `node tests/verify_models.mjs`
-checks that the **browser** runtime reproduces PyTorch's outputs on the same inputs.
+Each exporter checks that the exported maths matches PyTorch. In the browser runtime:
+
+```
+node tests/verify_models.mjs     # JS features/logits/phones/emotions == PyTorch (max |Δ| ≈ 5e-5)
+node tests/verify_streaming.mjs  # live-mic streaming == whole-clip analysis (bit-exact)
+```
+`tests/face-sheet.html` renders every viseme and emotion side by side (`#mouths` zooms on the mouth).
 
 ### Retrain
 Open the notebook in Colab (T4 GPU) → *Runtime ▸ Run all*. It clones this repo, builds a
@@ -67,6 +72,10 @@ python app.py            # → http://localhost:8000 (serves the face too)
 | `POST /tts` | MP3 |
 | `POST /tts/timed` | `{audio_base64, alignment}` from ElevenLabs `/with-timestamps` |
 | `GET /health` | provider status, ElevenLabs key presence, face models |
+
+> **ElevenLabs note:** the default voice (`21m00Tcm4TlvDq8ikWAM`) is a *library* voice, and ElevenLabs refuses
+> library voices over the API on the free plan (`402 paid_plan_required`). Use a paid plan/credits or a voice you own.
+> Until then the face falls back to the browser voice automatically and says why in the status line.
 
 Environment: `AI_PROVIDER` (`ollama`/`pearl`), `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `PEARL_API_BASE_URL`,
 `PEARL_API_KEY`, `PEARL_MODEL`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`. Keep them in `.env`, which is git-ignored.
