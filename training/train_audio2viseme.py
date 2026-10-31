@@ -244,15 +244,22 @@ def main():
         rec = np.diag(conf) / np.maximum(conf.sum(1), 1)
         f1 = 2 * prec * rec / np.maximum(prec + rec, 1e-9)
         return {"viseme_acc": round(float(acc), 4), "viseme_macro_f1": round(float(f1.mean()), 4),
-                "viseme_acc_tol20ms": round(tol_ok / max(conf.sum(), 1), 4),
+                "viseme_acc_tol20ms": round(float(tol_ok / max(conf.sum(), 1)), 4),
                 "phone_acc": round(ph_ok / max(ph_n, 1), 4),
                 "per_viseme_f1": {VISEMES[i]: round(float(f1[i]), 3) for i in range(len(VISEMES))},
                 "confusion": conf.tolist()}
 
     t0 = time.time()
     best, best_step, history = -1.0, 0, []
+    ck_path = ckpt / "audio2viseme_best.pt"
+    skip_train = False
+    if ck_path.exists() and not args.smoke:
+        prev = torch.load(ck_path, map_location="cpu", weights_only=False)
+        if prev.get("step", 0) >= args.steps and prev.get("cfg") == model.cfg:
+            print(f"Finished checkpoint found in Drive (best step {prev['step']}) — skipping training, exporting it.")
+            skip_train, best_step, history = True, prev["step"], prev.get("history", [])
     model.train()
-    for step in range(1, args.steps + 1):
+    for step in range(1, 0 if skip_train else args.steps + 1):
         xs, yv, yp = make_batch(rng, train, audio, vis, ph, args.batch, args.crop)
         x = torch.tensor(xs, device=device)
         x, mask = augment(torch, x, None, device)
@@ -278,14 +285,18 @@ def main():
             if m["viseme_acc"] > best:
                 best, best_step = m["viseme_acc"], step
                 torch.save({"model": model.state_dict(), "mean": mean.cpu(), "std": std.cpu(),
-                            "cfg": model.cfg, "step": step}, ckpt / "audio2viseme_best.pt")
+                            "cfg": model.cfg, "step": step, "history": history}, ck_path)
         if out_of_time:
             print("time budget reached")
             break
 
-    state = torch.load(ckpt / "audio2viseme_best.pt", map_location=device)
+    state = torch.load(ck_path, map_location=device, weights_only=False)
     model.load_state_dict(state["model"])
     model.eval()
+    best_step = state.get("step", best_step)
+    mean_np, std_np = state["mean"].cpu().numpy(), state["std"].cpu().numpy()
+    # evaluate with the checkpoint's own normalisation stats
+    mean, std = state["mean"].to(device), state["std"].to(device)
     final = evaluate(limit=len(val))
     noisy = evaluate(noisy=True, limit=min(len(val), 300))
     print(f"FINAL (best step {best_step}) — unseen voices: viseme acc {final['viseme_acc']:.3f}, "
@@ -307,8 +318,8 @@ def main():
 
     bw = BinWriter()
     bw.f32("mel_fb", mel_filterbank())
-    bw.f32("feat_mean", state["mean"].numpy())
-    bw.f32("feat_std", state["std"].numpy())
+    bw.f32("feat_mean", mean_np)
+    bw.f32("feat_std", std_np)
     for k, v in W.items():
         bw.f32(k, v)
     cfg = {"sr": SR, "win": WIN, "hop": HOP, "n_fft": N_FFT, "n_mels": N_MELS, "fmin": FMIN,
@@ -324,7 +335,7 @@ def main():
     u = val[0]
     clip = np.asarray(audio[u["a"]:u["a"] + min(u["n"], SR * 3 // 2)])
     feats = logmel_numpy(clip.astype(np.float32) / 32768.0)
-    feats_n = (feats - state["mean"].numpy()[:, None]) / state["std"].numpy()[:, None]
+    feats_n = (feats - mean_np[:, None]) / std_np[:, None]
     ref_vis, _ = np_forward(W, feats_n, model.cfg["dilations"])
     with torch.no_grad():
         t_vis, _ = model(torch.tensor(feats_n[None], dtype=torch.float32))
