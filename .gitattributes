@@ -1,0 +1,4 @@
+# keep model files byte-exact across platforms
+models/** -text
+*.bin binary
+*.ipynb text eol=lf

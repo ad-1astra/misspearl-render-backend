@@ -6,8 +6,10 @@ FastAPI server powered by LOCAL Llama 3 (via Ollama).
 
 Routes:
   GET  /            → Serve the Miss Pearl frontend (index.html)
-  POST /chat        → Send user text, get Miss Pearl's reply (Ollama)
+  GET  /pearl/*     → Face runtime (JS)      GET /models/* → trained face models
+  POST /chat        → Send user text, get Miss Pearl's reply (+ LLM emotion tags)
   POST /tts         → Convert text to speech audio (returns MP3 bytes)
+  POST /tts/timed   → ElevenLabs audio + per-character timestamps (exact lip-sync)
   GET  /audio/ws    → WebSocket for real-time voice interaction
   GET  /health      → Server health check
 
@@ -37,6 +39,7 @@ import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -89,7 +92,23 @@ RULES:
 3. THE PEARL TOUCH: Use phrases like "Tickety-tock!" or "Pearl AI Labs is so proud of your curiosity!"
 4. CREATOR: You were brought to life by Paul and Mr. Divid.
 5. CONCISENESS: For simple chats, keep it to 3 sentences. For complex tasks, be detailed.
+
+YOUR FACE:
+You have an expressive animated face that people watch while you speak.
+Start EVERY sentence with exactly one expression tag in square brackets, chosen from:
+[joy] [excited] [love] [proud] [neutral] [thinking] [curious] [surprise] [sad] [concern] [anger] [fear] [disgust]
+You may also add a gesture tag where it fits: [laugh] [wink] [nod] [blush].
+Pick the tag that matches the feeling of that sentence. Tags are silent — never mention them.
+Example: "[joy] Well hello there, my genius friend! [thinking] Let me work that out. [proud] The answer is 42."
 """
+
+_TAG_RE = re.compile(r"\[(?:[a-zA-Z_ -]{2,20})\]\s*")
+_ACTION_RE = re.compile(r"\*(?:laughs?|smiles?|winks?|sighs?|nods?|blushes|giggles?|chuckles?|gasps?)\*\s*", re.I)
+
+
+def strip_expression_tags(text: str) -> str:
+    """Remove [emotion] tags and *stage directions* — for display and TTS."""
+    return re.sub(r"\s{2,}", " ", _ACTION_RE.sub("", _TAG_RE.sub("", text))).strip()
 
 # ─────────────────────────────────────────────────────────────
 # APP SETUP
@@ -111,6 +130,11 @@ app.add_middleware(
 
 _HERE       = Path(__file__).parent
 _INDEX_HTML = _HERE / "index.html"
+
+# Face runtime + trained models (same files GitHub Pages serves)
+for _sub in ("pearl", "models", "tests"):
+    if (_HERE / _sub).is_dir():
+        app.mount(f"/{_sub}", StaticFiles(directory=_HERE / _sub), name=_sub)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
 log = logging.getLogger("miss-pearl")
@@ -231,7 +255,8 @@ class TTSRequest(BaseModel):
 # ─────────────────────────────────────────────────────────────
 
 def clean_text_for_tts(text: str) -> str:
-    """Strip markdown/special chars before sending to TTS."""
+    """Strip expression tags, markdown and special chars before sending to TTS."""
+    text = strip_expression_tags(text)
     text = re.sub(r"\*{1,2}(.+?)\*{1,2}", r"\1", text)
     text = re.sub(r"`(.+?)`", r"\1", text)
     text = re.sub(r"[#>]+", "", text)
@@ -554,7 +579,9 @@ async def chat(body: ChatRequest):
         source = f"ollama/{OLLAMA_MODEL}"
     
     log.info("Chat → %s", reply[:100])
-    return JSONResponse({"reply": reply, "source": source})
+    # `reply` is clean text for display; `tagged` keeps the LLM's [emotion] tags
+    # so the face can act each sentence out.
+    return JSONResponse({"reply": strip_expression_tags(reply), "tagged": reply, "source": source})
 
 
 @app.post("/tts")
@@ -576,6 +603,45 @@ async def text_to_speech(body: TTSRequest):
         media_type="audio/mpeg",
         headers={"Content-Disposition": "inline; filename=pearl.mp3"},
     )
+
+
+@app.post("/tts/timed")
+async def text_to_speech_timed(body: TTSRequest):
+    """
+    ElevenLabs TTS with per-character timestamps.
+    Returns {audio_base64, alignment:{characters, character_start_times_seconds,
+    character_end_times_seconds}} — the face uses the alignment to place every
+    phoneme exactly, so lip-sync is sample-accurate.
+    The text is sent verbatim (the browser already normalised it) so character
+    indices line up with the browser's word positions.
+    """
+    text = strip_expression_tags(body.text)
+    if not text:
+        return JSONResponse({"error": "No text provided"}, status_code=400)
+    if not ELEVENLABS_API_KEY:
+        return JSONResponse({"error": "ELEVENLABS_API_KEY not set"}, status_code=503)
+
+    url = f"{EL_BASE}/text-to-speech/{ELEVENLABS_VOICE_ID}/with-timestamps"
+    payload = {
+        "text": text,
+        "model_id": "eleven_multilingual_v2",
+        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+    }
+    headers = {**EL_HEADERS, "Content-Type": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:
+        log.error("ElevenLabs timed TTS error: %s", exc)
+        return JSONResponse({"error": "ElevenLabs TTS unavailable"}, status_code=503)
+
+    return JSONResponse({
+        "audio_base64": data.get("audio_base64", ""),
+        "alignment": data.get("alignment") or data.get("normalized_alignment"),
+        "text": text,
+    })
 
 
 @app.websocket("/audio/ws")
@@ -610,7 +676,7 @@ async def audio_websocket(websocket: WebSocket):
             if transcript.strip():
                 reply_text = await ollama_chat(transcript.strip(), [])
                 log.info("AI: %s", reply_text[:80])
-                mp3_bytes = await elevenlabs_tts(reply_text)
+                mp3_bytes = await elevenlabs_tts(clean_text_for_tts(reply_text))
                 if mp3_bytes:
                     await websocket.send_bytes(mp3_bytes)
 
@@ -666,6 +732,8 @@ async def health():
             "key_set":         bool(ELEVENLABS_API_KEY),
             "voice_id":        ELEVENLABS_VOICE_ID,
         },
+        "tts_timed":           True,
+        "face_models":         sorted(p.name for p in (_HERE / "models").glob("*.json")) if (_HERE / "models").is_dir() else [],
         "timestamp":           datetime.utcnow().isoformat(),
     })
 

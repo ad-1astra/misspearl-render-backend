@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Face Sheet</title>
+<style>
+  body { font-family: ui-monospace, monospace; background: #e8e8e8; margin: 16px; }
+  h2 { font-size: 14px; margin: 14px 0 6px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, 196px); gap: 10px; }
+  figure { margin: 0; background: #fff; border-radius: 10px; padding: 6px; text-align: center; font-size: 12px; overflow: hidden; }
+  svg { width: 184px; height: 184px; overflow: visible; }
+  body.mouths svg { width: 520px; height: 520px; margin: -250px -168px -60px; }
+  body.mouths .grid { grid-template-columns: repeat(auto-fill, 196px); }
+  body.mouths figure { height: 150px; }
+</style>
+</head>
+<body>
+<h2>Visemes (neutral)</h2><div class="grid" id="vis"></div>
+<h2>Emotions</h2><div class="grid" id="emo"></div>
+<h2>Visemes × joy</h2><div class="grid" id="visjoy"></div>
+<script type="module">
+  import { Face, VISEME_SHAPES, EMOTIONS } from "../pearl/face.js";
+  if (location.hash === "#mouths") document.body.classList.add("mouths");
+  const make = (parent, label, setup) => {
+    const fig = document.createElement("figure");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    fig.appendChild(svg);
+    fig.appendChild(Object.assign(document.createElement("figcaption"), { textContent: label }));
+    parent.appendChild(fig);
+    const f = new Face(svg);
+    f.blink.next = 1e9; f.saccadeNext = 1e9; f.gazeTarget = { x: 0, y: 0 };
+    f.time = 0;
+    setup(f);
+    for (let i = 0; i < 180; i++) f.update(1 / 60);
+  };
+  for (const v of Object.keys(VISEME_SHAPES)) make(vis, v, (f) => f.setMouth({ ...VISEME_SHAPES[v] }));
+  for (const e of EMOTIONS) make(emo, e, (f) => f.setEmotion({ [e]: 1 }));
+  for (const v of ["aa", "E", "ih", "oh", "ou", "PP", "FF", "SS"]) make(visjoy, v + " + joy", (f) => { f.setEmotion({ joy: 1 }); f.setMouth({ ...VISEME_SHAPES[v] }); });
+  document.title = "Face Sheet ✓";
+</script>
+</body>
+</html>
