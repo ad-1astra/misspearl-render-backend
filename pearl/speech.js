@@ -10,17 +10,23 @@
 //   audio    : any audio (TTS without timings, files, mic). The trained
 //              audio→viseme network reads the mouth shapes from the sound.
 
-import { parseTags, planUtterance, refineWithAudio, retimeWithAlignment, splitSentences, wordAtChar } from "./text.js?v=20261031b";
-import { blendVisemeProbs, sampleTimeline, VISEME_SHAPES } from "./face.js?v=20261031b";
-import { analyzeClip, loudness, to16kMono } from "./audio.js?v=20261031b";
+//   song     : the trained song model hears where a voice is singing (the mouth moves only
+//              then, never to the beat); optional lyrics (Whisper in the browser) give each
+//              line its real mouth-shape sequence, force-aligned to the sung audio, and an
+//              emotion read from the words. The head grooves to the detected beat.
+
+import { parseTags, planUtterance, refineWithAudio, retimeWithAlignment, splitSentences, wordAtChar } from "./text.js?v=20261101h";
+import { blendVisemeProbs, sampleTimeline, VISEME_SHAPES } from "./face.js?v=20261101h";
+import { analyzeClip, loudness, to16kMono } from "./audio.js?v=20261101h";
+import { alignLine, groupLines, isVowelViseme, mergeLines, readLyrics, trackBeats, voiceSections } from "./song.js?v=20261101h";
 
 const now = () => performance.now() / 1000;
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const EMO_KEYS = ["anger", "disgust", "fear", "joy", "sadness", "surprise"];
 
 export class Performer {
-  constructor({ face, pron, durations, emotionModel, a2v, fx, hooks = {} }) {
-    Object.assign(this, { face, pron, durations, emotionModel, a2v, fx, hooks });
+  constructor({ face, pron, durations, emotionModel, a2v, fx, sing = null, singFx = null, hooks = {} }) {
+    Object.assign(this, { face, pron, durations, emotionModel, a2v, fx, sing, singFx, hooks });
     this.lead = 0.045;           // lips lead the sound slightly (perceptually tighter)
     this.active = null;          // current driver
     this.queueId = 0;
@@ -139,6 +145,8 @@ export class Performer {
       let best = 0; p.forEach((v, k) => { if (v > p[best]) best = k; });
       info = { viseme: this.a2v.visemes[best], probs: p, source: "neural audio→viseme", sync: `frame ${i0}` };
       if (t > d.duration + 0.2) this._finish(d);
+    } else if (d.kind === "song") {
+      info = this._tickSong(d);
     } else if (d.kind === "stream") {
       const fr = d.latest;
       if (fr) {
@@ -346,6 +354,144 @@ export class Performer {
       this.hooks.onAnalysis && this.hooks.onAnalysis({ frames: an.frames.length, ms, duration: an.duration });
       src.start(start);
     });
+  }
+
+  // ── Engine: songs ─────────────────────────────────────────
+  /**
+   * Lip-sync a song: the mouth follows the singing voice, not the beat.
+   * opts: { lyrics: bool, onProgress(p), onStatus(text) }
+   */
+  async playSong(arrayBuffer, { lyrics = true, onProgress, onStatus } = {}) {
+    const model = this.sing || this.a2v, fx = this.sing ? this.singFx : this.fx;
+    if (!model) throw new Error("audio model not loaded");
+    const id = ++this.queueId;
+    const say = (s) => onStatus && onStatus(s);
+    const ctx = this.ctx();
+    const buf = await ctx.decodeAudioData(arrayBuffer);
+    const s16 = await to16kMono(buf);
+    say(this.sing ? "Listening for the singing voice and the beat…" : "Listening… (song model not loaded — using the speech model)");
+    const t0 = performance.now();
+    const an = await analyzeClip(model, fx, s16, onProgress);
+    if (id !== this.queueId) return;
+    const msNet = performance.now() - t0;
+    // where is someone singing? (song model) — the speech model falls back to "not silent"
+    const voiceRaw = an.voice || Float32Array.from(an.frames, (p) => 1 - p[0]);
+    const { smooth: voice, sections } = voiceSections(voiceRaw);
+    const bt = an.feats ? trackBeats(an.feats.data, an.feats.n, an.frames.length) : { tempo: 0, beats: [] };
+    const sung = sections.reduce((s, x) => s + x.t1 - x.t0, 0);
+    let lines = [], timeline = null, lyricNote = "";
+    if (lyrics && sections.length) {
+      try {
+        const words = await readLyrics(s16, sections, say);
+        if (id !== this.queueId) return;
+        const aligned = groupLines(words, sections).map((l) => alignLine(l, this.pron, this.durations, an.frames, refineWithAudio)).filter(Boolean);
+        for (const L of aligned) L.emo = this.readEmotion(L.text, []);
+        lines = aligned;
+        if (lines.length) timeline = mergeLines(lines, an.duration);
+        lyricNote = lines.length ? `${words.length} words in ${lines.length} lines, ${lines.filter((l) => l.refined).length} aligned to the voice` : "no words recognised";
+      } catch (e) {
+        console.warn("[pearl] lyrics unavailable", e);
+        lyricNote = `lyrics unavailable (${e.message})`;
+      }
+    }
+    if (id !== this.queueId) return;
+    const report = { duration: an.duration, ms: msNet, frames: an.frames.length, sections, sungSeconds: sung, tempo: bt.tempo,
+      beats: bt.beats.length, firstVoice: sections.length ? sections[0].t0 : null, lines: lines.length, lyricNote,
+      model: this.sing ? "song model" : "speech model" };
+    console.debug("[pearl] song analysis", report);
+    this.hooks.onSong && this.hooks.onSong(report);
+    // a mood for the music itself (lines with words override it)
+    const songMood = bt.tempo >= 112 ? { joy: 0.45, excited: 0.25 } : bt.tempo ? { joy: 0.3, love: 0.2 } : { joy: 0.3 };
+    return new Promise((resolve) => {
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(this.analyser);
+      const start = ctx.currentTime + 0.1;
+      const d = { kind: "song", src, start, fps: an.fps, frames: an.frames, voice, sections, duration: an.duration,
+        beats: bt.beats, beatIdx: 0, lines, lineIdx: -1, timeline, hint: 0, gate: 0, hold: { v: null, t0: 0 },
+        lastEvent: null, lastWord: null, songMood, wasVoice: false, resolve };
+      src.onended = () => { this._finish(d); if (id === this.queueId) this.hooks.onDone && this.hooks.onDone(); };
+      this.active = d;
+      this.face.setState("speaking");
+      this.face.setEmotion(songMood);
+      src.start(start);
+    });
+  }
+
+  _tickSong(d) {
+    const t = this.ctx().currentTime - d.start + this.lead;
+    const N = d.frames.length;
+    const f = t * d.fps;
+    const i0 = clamp(Math.floor(f), 0, N - 1), i1 = Math.min(i0 + 1, N - 1), a = clamp(f - i0, 0, 1);
+    const v = d.voice[i0] * (1 - a) + d.voice[i1] * a;
+    // voice gate: open inside a sung section (hysteresis already applied), shut outside it.
+    // Opens a hair early (singers' lips move just before the sound), closes fast after.
+    d.secIdx = d.secIdx || 0;
+    while (d.secIdx < d.sections.length && d.sections[d.secIdx].t1 <= t) d.secIdx++;
+    const sec = d.sections[d.secIdx];
+    const target = sec && t >= sec.t0 - 0.04 ? 1 : 0;
+    const dt = clamp(t - (d.lastT ?? t), 0, 0.25);         // time-based, so any frame rate behaves the same
+    d.lastT = t;
+    d.gate += (target - d.gate) * (1 - Math.exp(-dt / (target > d.gate ? 0.03 : 0.06)));
+    const singing = d.gate > 0.5;
+    let shape = null, vis = "sil", word = "", active = null;
+    let p = null;
+    if (d.timeline) {
+      const r = sampleTimeline(d.timeline, t, d.hint);
+      active = r.active;
+      if (active) {
+        d.hint = Math.max(0, d.timeline.indexOf(active) - 2);
+        if (active.line) { shape = r.shape; vis = active.v; const w = active.line.words[active.word]; word = w ? w.w : ""; }
+      }
+    }
+    if (!shape) {
+      p = d.frames[i0].map((x, k) => x * (1 - a) + d.frames[i1][k] * a);
+      shape = blendVisemeProbs(p);
+      let best = 0; p.forEach((x, k) => { if (x > p[best]) best = k; });
+      vis = this.a2v ? this.a2v.visemes[best] : "sil";
+    }
+    const sil = VISEME_SHAPES.sil, m = {};
+    for (const k in shape) m[k] = sil[k] + (shape[k] - sil[k]) * d.gate;
+    this.face.setMouth(m, 1.12);                       // singers open wider than speakers
+    // held vowel → the "feeling it" look
+    if (singing && isVowelViseme(vis)) { if (d.hold.v !== vis) d.hold = { v: vis, t0: t }; }
+    else d.hold = { v: null, t0: t };
+    this.face.setSinging(d.hold.v ? clamp((t - d.hold.t0 - 0.45) / 0.6, 0, 1) * 0.85 : 0);
+    // brow pops on stressed sung syllables, a little lift when a phrase starts
+    if (active && active !== d.lastEvent) {
+      d.lastEvent = active;
+      if (active.line && active.stress === 1 && !active.glide && Math.random() < 0.45) this.face.emphasis(0.5);
+    }
+    if (singing && !d.wasVoice) this.face.emphasis(0.6);
+    d.wasVoice = singing;
+    // the beat: bigger bobs when only the music plays
+    while (d.beatIdx < d.beats.length && d.beats[d.beatIdx].t <= t) {
+      const b = d.beats[d.beatIdx++];
+      if (t - b.t < 0.15) this.face.beat(b.s * (singing ? 0.4 : 0.85));
+    }
+    // lyric lines: the face acts out each line's emotion; the bubble shows the words
+    if (d.lines.length) {
+      let li = -1;
+      for (let k = 0; k < d.lines.length; k++) if (d.lines[k].t0 - 0.3 <= t) li = k; else break;
+      if (li >= 0 && t > d.lines[li].t1 + 1.5) li = -1;
+      if (li !== d.lineIdx) {
+        d.lineIdx = li;
+        if (li >= 0) {
+          const L = d.lines[li];
+          this._applySentenceMood({ text: L.text, emo: L.emo });
+          this.hooks.onLyric && this.hooks.onLyric(L, li);
+        } else this.face.setEmotion(d.songMood);
+      }
+      if (active && active.line && active.word !== d.lastWord) {
+        d.lastWord = active.word;
+        const w = active.line.words[active.word];
+        this.hooks.onLyricWord && this.hooks.onLyricWord(d.lineIdx, w && w.src != null ? w.src : active.word, active.line);
+      }
+    }
+    if (t > d.duration + 0.3) this._finish(d);
+    return { viseme: vis, probs: p, word, voice: v,
+      source: d.timeline ? "song model + lyrics (aligned to the voice)" : this.sing ? "song model (voice only, not the beat)" : "speech model",
+      sync: singing ? `🎤 voice singing (${Math.round(v * 100)}%)` : `🥁 music only (${Math.round(v * 100)}% voice) — mouth resting` };
   }
 
   /** Live microphone: frames arrive from StreamingVisemes. */

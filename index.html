@@ -93,6 +93,9 @@
     .drop.over { border-color: var(--orange); background: var(--orange-soft); }
     .progress { height: 4px; background: #eee; border-radius: 4px; overflow: hidden; margin-top: 10px; }
     .progress div { height: 100%; width: 0; background: var(--orange); transition: width .2s; }
+    .voicestrip { display: block; width: 100%; height: 10px; margin-top: 6px; border-radius: 4px; }
+    .check { display: flex; gap: 8px; align-items: flex-start; font-size: 11.5px; color: var(--muted); margin-top: 10px; cursor: pointer; line-height: 1.4; }
+    .check input { margin-top: 2px; accent-color: var(--orange); }
 
     /* ── brain ── */
     .brain { margin-top: 18px; padding: 16px; }
@@ -164,7 +167,7 @@
           <button class="on" data-tab="say" role="tab">Say</button>
           <button data-tab="chat" role="tab">Chat</button>
           <button data-tab="mirror" role="tab">Mirror</button>
-          <button data-tab="audio" role="tab">Audio</button>
+          <button data-tab="audio" role="tab">Song</button>
         </div>
 
         <div class="panel on" id="panel-say">
@@ -187,9 +190,11 @@
         </div>
 
         <div class="panel" id="panel-audio">
-          <p class="hint">Drop any speech recording (mp3, wav, m4a…). The network reads the visemes straight from the audio, then she plays it back lip-synced.</p>
-          <label class="drop" id="drop">Drop an audio file here or click to choose<input type="file" id="fileIn" accept="audio/*" class="sr" /></label>
+          <p class="hint">Drop a <b>song</b> (or any recording: mp3, wav, m4a…). The trained song model hears where a voice is singing, so she sings along with the <b>voice</b>, never the drums or the beat, and keeps her mouth closed and grooves when only the music plays. With lyrics on, she also reads each line's words and acts out their feeling.</p>
+          <label class="drop" id="drop">🎵 Drop a song here or click to choose<input type="file" id="fileIn" accept="audio/*" class="sr" /></label>
+          <label class="check"><input type="checkbox" id="lyricsOn" checked /> Read the lyrics too (downloads a 77 MB speech recogniser the first time; it runs on your device)</label>
           <div class="progress"><div id="prog"></div></div>
+          <canvas id="voiceStrip" class="voicestrip" aria-label="Where the voice sings"></canvas>
           <p class="src" id="audioInfo"></p>
         </div>
       </div>
@@ -241,6 +246,6 @@
     <div class="row"><button class="btn green" id="testApi">Test backend</button><button class="btn" id="closeSettings">Done</button></div>
   </dialog>
 
-  <script type="module" src="pearl/app.js?v=20261031b"></script>
+  <script type="module" src="pearl/app.js?v=20261101h"></script>
 </body>
 </html>

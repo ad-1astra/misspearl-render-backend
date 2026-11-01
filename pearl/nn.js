@@ -38,18 +38,35 @@ export function parseModel(man, buf) {
 // ─────────────────────────────────────────────────────────────
 
 // y[co][t] = b[co] + Σ_ci Σ_k w[co][ci][k] · x[ci][t + (k-1)·d]   (zero padded)
+// Four output channels per pass share each input load (same summation order → identical results).
 function conv1d(x, Cin, T, w, b, Cout, K, d, relu) {
   const y = new Float32Array(Cout * T);
   const pad = (d * (K - 1)) >> 1;
-  for (let co = 0; co < Cout; co++) {
+  const CK = Cin * K;
+  let co = 0;
+  for (; co + 3 < Cout; co += 4) {
+    const y0 = co * T, y1 = y0 + T, y2 = y1 + T, y3 = y2 + T;
+    y.fill(b[co], y0, y1); y.fill(b[co + 1], y1, y2); y.fill(b[co + 2], y2, y3); y.fill(b[co + 3], y3, y3 + T);
+    for (let ci = 0; ci < Cin; ci++) {
+      const xo = ci * T, w0 = co * CK + ci * K;
+      for (let k = 0; k < K; k++) {
+        const a0 = w[w0 + k], a1 = w[w0 + CK + k], a2 = w[w0 + 2 * CK + k], a3 = w[w0 + 3 * CK + k];
+        const sh = k * d - pad;
+        const t0 = Math.max(0, -sh), t1 = Math.min(T, T - sh);
+        for (let t = t0; t < t1; t++) {
+          const xv = x[xo + t + sh];
+          y[y0 + t] += a0 * xv; y[y1 + t] += a1 * xv; y[y2 + t] += a2 * xv; y[y3 + t] += a3 * xv;
+        }
+      }
+    }
+  }
+  for (; co < Cout; co++) {
     const yo = co * T;
     y.fill(b[co], yo, yo + T);
     for (let ci = 0; ci < Cin; ci++) {
-      const xo = ci * T;
-      const wo = (co * Cin + ci) * K;
+      const xo = ci * T, wo = co * CK + ci * K;
       for (let k = 0; k < K; k++) {
         const wv = w[wo + k];
-        if (wv === 0) continue;
         const sh = k * d - pad;
         const t0 = Math.max(0, -sh), t1 = Math.min(T, T - sh);
         for (let t = t0; t < t1; t++) y[yo + t] += wv * x[xo + t + sh];
@@ -63,7 +80,20 @@ function conv1d(x, Cin, T, w, b, Cout, K, d, relu) {
 // 1×1 conv = matmul: y[co][t] = b[co] + Σ_ci w[co][ci] x[ci][t]
 function pointwise(x, Cin, T, w, b, Cout) {
   const y = new Float32Array(Cout * T);
-  for (let co = 0; co < Cout; co++) {
+  let co = 0;
+  for (; co + 3 < Cout; co += 4) {
+    const y0 = co * T, y1 = y0 + T, y2 = y1 + T, y3 = y2 + T;
+    y.fill(b[co], y0, y1); y.fill(b[co + 1], y1, y2); y.fill(b[co + 2], y2, y3); y.fill(b[co + 3], y3, y3 + T);
+    for (let ci = 0; ci < Cin; ci++) {
+      const a0 = w[co * Cin + ci], a1 = w[(co + 1) * Cin + ci], a2 = w[(co + 2) * Cin + ci], a3 = w[(co + 3) * Cin + ci];
+      const xo = ci * T;
+      for (let t = 0; t < T; t++) {
+        const xv = x[xo + t];
+        y[y0 + t] += a0 * xv; y[y1 + t] += a1 * xv; y[y2 + t] += a2 * xv; y[y3 + t] += a3 * xv;
+      }
+    }
+  }
+  for (; co < Cout; co++) {
     const yo = co * T;
     y.fill(b[co], yo, yo + T);
     for (let ci = 0; ci < Cin; ci++) {
@@ -90,8 +120,11 @@ export class Audio2Viseme {
     return { ...this.cfg, fb: T.mel_fb.data, mean: T.feat_mean.data, std: T.feat_std.data };
   }
 
-  /** feats: Float32Array [n_mels][T] (already normalised). Returns {vis, ph} logits, channel-major. */
-  forward(feats, nFrames) {
+  /** True for the song model: it also says whether a voice is singing in each frame. */
+  get hasVoice() { return !!this.T["voc.w"]; }
+
+  /** feats: Float32Array [n_mels][T] (already normalised). Returns {vis, ph, voc?} logits, channel-major. */
+  forward(feats, nFrames, { phones = true } = {}) {
     const { C, T: W } = this;
     const M = this.cfg.n_mels;
     let x = conv1d(feats, M, nFrames, W["inp.w"].data, W["inp.b"].data, C, 3, 1, true);
@@ -102,8 +135,15 @@ export class Audio2Viseme {
     });
     const nv = this.visemes.length, np = this.auxPhones.length;
     const vis = pointwise(x, C, nFrames, W["vis.w"].data, W["vis.b"].data, nv);
-    const ph = pointwise(x, C, nFrames, W["ph.w"].data, W["ph.b"].data, np);
-    return { vis, ph, nFrames };
+    const ph = phones ? pointwise(x, C, nFrames, W["ph.w"].data, W["ph.b"].data, np) : null;
+    const voc = this.hasVoice ? pointwise(x, C, nFrames, W["voc.w"].data, W["voc.b"].data, 1) : null;
+    return { vis, ph, voc, nFrames };
+  }
+
+  /** Voice-activity probability per frame (song model only). */
+  voice(out) {
+    if (!out.voc) return null;
+    return Float32Array.from(out.voc, (z) => 1 / (1 + Math.exp(-z)));
   }
 
   /** Softmax over the viseme axis → array of Float32Array(15) per frame. */

@@ -113,16 +113,23 @@ export async function analyzeClip(model, fx, samples16k, onProgress) {
   const ctx = model.context;            // frames of context needed for exact outputs
   const CH = 600;
   const frames = new Array(total);
+  const voice = model.hasVoice ? new Float32Array(total) : null;
+  const feats = { n: fx.cfg.n_mels, data: new Float32Array(fx.cfg.n_mels * total) };   // kept for beat tracking
   for (let s = 0; s < total; s += CH) {
     const a = Math.max(0, s - ctx), b = Math.min(total, s + CH + ctx);
     const f = fx.compute(samples16k, a, b - a);
-    const out = model.forward(f.data, f.T);
+    const out = model.forward(f.data, f.T, { phones: false });
     const pr = model.probs(out);
-    for (let t = s; t < Math.min(total, s + CH); t++) frames[t] = pr[t - a];
+    const vp = voice ? model.voice(out) : null;
+    for (let t = s; t < Math.min(total, s + CH); t++) {
+      frames[t] = pr[t - a];
+      if (vp) voice[t] = vp[t - a];
+      if (feats) for (let m = 0; m < feats.n; m++) feats.data[m * total + t] = f.data[m * f.T + t - a];
+    }
     onProgress && onProgress(Math.min(1, (s + CH) / total));
     await new Promise((r) => setTimeout(r, 0));
   }
-  return { fps: 100, frames, energy: loudness(samples16k), duration: samples16k.length / 16000 };
+  return { fps: 100, frames, voice, feats, energy: loudness(samples16k), duration: samples16k.length / 16000 };
 }
 
 /**

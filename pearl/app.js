@@ -1,9 +1,9 @@
 // Miss Pearl — app wiring: models, face loop, UI, backend.
-import { Audio2Viseme, EmotionModel, G2P } from "./nn.js?v=20261031b";
-import { Durations, Lexicon, Pronouncer, VISEMES } from "./text.js?v=20261031b";
-import { Face } from "./face.js?v=20261031b";
-import { FeatureExtractor, StreamingVisemes } from "./audio.js?v=20261031b";
-import { Performer } from "./speech.js?v=20261031b";
+import { Audio2Viseme, EmotionModel, G2P } from "./nn.js?v=20261101h";
+import { Durations, Lexicon, Pronouncer, VISEMES } from "./text.js?v=20261101h";
+import { Face } from "./face.js?v=20261101h";
+import { FeatureExtractor, StreamingVisemes } from "./audio.js?v=20261101h";
+import { Performer } from "./speech.js?v=20261101h";
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -209,6 +209,7 @@ let models = {};
     lexicon: Lexicon.load("models/lexicon.txt"),
     g2p: G2P.load("models/g2p.json"),
     a2v: Audio2Viseme.load("models/audio2viseme.json"),
+    sing: Audio2Viseme.load("models/sing2viseme.json"),
     emotion: EmotionModel.load("models/emotion.json"),
     durations: fetch("models/durations.json").then((r) => (r.ok ? r.json() : null)),
   };
@@ -219,8 +220,23 @@ let models = {};
   models = out;
   const pron = new Pronouncer(out.lexicon, out.g2p);
   const fx = out.a2v ? new FeatureExtractor(out.a2v.featureConfig) : null;
+  const singFx = out.sing ? new FeatureExtractor(out.sing.featureConfig) : null;
   performer = new Performer({ face, pron, durations: new Durations(out.durations), emotionModel: out.emotion, a2v: out.a2v, fx,
+    sing: out.sing, singFx,
     hooks: {
+      onSong: (r) => {
+        const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+        $("audioInfo").textContent = `${r.model}: ${fmt(r.duration)} analysed in ${(r.ms / 1000).toFixed(1)} s · voice singing for ${fmt(r.sungSeconds)} in ${r.sections.length} parts` +
+          (r.firstVoice != null ? `, first at ${fmt(r.firstVoice)}` : ", no voice found") + (r.tempo ? ` · beat ${r.tempo} BPM` : "") +
+          (r.lyricNote ? ` · lyrics: ${r.lyricNote}` : "");
+        $("prog").style.width = "100%";
+        drawVoiceStrip(r);
+      },
+      onLyric: (L) => { renderBubble(L.text); currentPerf = null; },
+      onLyricWord: (li, wi, L) => {
+        // highlight by word order (the bubble shows exactly this line's words)
+        bubbleSpans.forEach((s, k) => { s.classList.toggle("on", k === wi); s.classList.toggle("done", k < wi); });
+      },
       onPerformance: (perf) => { currentPerf = perf; renderBubble(perf.clean); },
       onWord: (si, wi, plan) => {
         if (!currentPerf) return;
@@ -243,8 +259,8 @@ let models = {};
       onAnalysis: (a) => { $("audioInfo").textContent = `Network analysed ${a.frames} frames (${a.duration.toFixed(1)} s of audio) in ${Math.round(a.ms)} ms on your CPU.`; },
     } });
   performer.lead = settings.lead / 1000;
-  const ok = Object.entries(out).filter(([, v]) => v).map(([k]) => k);
-  chip.textContent = ok.length >= 5 ? "face models ✓" : `models: ${ok.length}/5`;
+  const ok = Object.entries(out).filter(([k, v]) => v && k !== "sing").map(([k]) => k);
+  chip.textContent = ok.length >= 5 ? (out.sing ? "face + song models ✓" : "face models ✓") : `models: ${ok.length}/5`;
   chip.className = ok.length >= 5 ? "chip ok" : "chip warn";
   const mi = [];
   if (out.lexicon) mi.push(`lexicon ${out.lexicon.size.toLocaleString()} words`);
@@ -252,6 +268,10 @@ let models = {};
   if (out.g2p) mi.push(`neural G2P (${(100 * (1 - (m(out.g2p).per ?? 0))).toFixed(1)}% phones right on unseen words)`);
   if (out.a2v) mi.push(`audio→viseme net (${(100 * (m(out.a2v).viseme_acc_tol20ms ?? m(out.a2v).viseme_acc ?? 0)).toFixed(1)}% frames ±20 ms on unseen voices)`);
   if (out.emotion) mi.push(`emotion net (${(100 * (m(out.emotion).teacher_agreement ?? 0)).toFixed(1)}% agreement with RoBERTa teacher)`);
+  if (out.sing) {
+    const sm = m(out.sing), z = (sm.synthetic_songs_unseen_voices_and_artists || {})["voice 0 dB"] || {};
+    mi.push(`song net (voice found ${(100 * (z.voice_f1 ?? 0)).toFixed(0)}% F1, mouth still on the beat ${(100 * (z.mouth_still_on_beat ?? 0)).toFixed(0)}% — unseen songs)`);
+  }
   $("modelInfo").textContent = mi.join(" · ");
   window.pearl = { face, performer, models, pron };
 })();
@@ -383,16 +403,33 @@ $("mirrorBtn").onclick = async () => {
   $("mirrorInfo").textContent = "Listening… say something!";
 };
 
-// Audio files
+// Audio files & songs
 const drop = $("drop");
+$("lyricsOn").checked = store.get("lyrics", true);
+$("lyricsOn").onchange = (e) => store.set("lyrics", e.target.checked);
 async function handleFile(file) {
   if (!file || !performer) return;
   performer.stop();
   $("audioInfo").textContent = `Analysing ${file.name}…`;
+  $("prog").style.width = "0%";
   renderBubble(`🎧 ${file.name}`);
   try {
-    await performer.playAudio(await file.arrayBuffer(), { onProgress: (p) => ($("prog").style.width = `${Math.round(p * 100)}%`) });
+    await performer.playSong(await file.arrayBuffer(), {
+      lyrics: $("lyricsOn").checked,
+      onProgress: (p) => ($("prog").style.width = `${Math.round(p * 100)}%`),
+      onStatus: (s) => ($("audioInfo").textContent = s),
+    });
   } catch (e) { $("audioInfo").textContent = `Couldn't read that file: ${e.message}`; }
+}
+// a strip under the progress bar: where the voice sings (orange) vs. music only (dark)
+function drawVoiceStrip(r) {
+  const c = $("voiceStrip"); if (!c) return;
+  const g = c.getContext("2d"), W = c.width = c.clientWidth * devicePixelRatio, H = c.height = 10 * devicePixelRatio;
+  g.clearRect(0, 0, W, H);
+  g.fillStyle = "rgba(13,51,32,.25)"; g.fillRect(0, 0, W, H);
+  g.fillStyle = "#f5630a";
+  for (const s of r.sections) g.fillRect((s.t0 / r.duration) * W, 0, Math.max(1, ((s.t1 - s.t0) / r.duration) * W), H);
+  c.title = `orange = voice singing (${r.sections.length} parts) · dark = music only`;
 }
 $("fileIn").onchange = (e) => handleFile(e.target.files[0]);
 ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); }));

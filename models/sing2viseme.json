@@ -1,0 +1,564 @@
+{
+ "format": "pearl-nn-1",
+ "bin": "sing2viseme.bin",
+ "config": {
+  "sr": 16000,
+  "win": 400,
+  "hop": 160,
+  "n_fft": 512,
+  "n_mels": 80,
+  "fmin": 50.0,
+  "fmax": 8000.0,
+  "log_eps": 1e-05,
+  "window": "hann-periodic",
+  "channels": 128,
+  "dilations": [
+   1,
+   2,
+   4,
+   8,
+   16,
+   1,
+   2,
+   4,
+   8,
+   16
+  ],
+  "visemes": [
+   "sil",
+   "PP",
+   "FF",
+   "TH",
+   "DD",
+   "kk",
+   "CH",
+   "SS",
+   "nn",
+   "RR",
+   "aa",
+   "E",
+   "ih",
+   "oh",
+   "ou"
+  ],
+  "aux_phones": [
+   "SIL",
+   "AA",
+   "AE",
+   "AH",
+   "AO",
+   "AW",
+   "AY",
+   "B",
+   "CH",
+   "D",
+   "DH",
+   "EH",
+   "ER",
+   "EY",
+   "F",
+   "G",
+   "HH",
+   "IH",
+   "IY",
+   "JH",
+   "K",
+   "L",
+   "M",
+   "N",
+   "NG",
+   "OW",
+   "OY",
+   "P",
+   "R",
+   "S",
+   "SH",
+   "T",
+   "TH",
+   "UH",
+   "UW",
+   "V",
+   "W",
+   "Y",
+   "Z",
+   "ZH"
+  ],
+  "voice_head": true,
+  "params": 701368,
+  "kind": "sing2viseme",
+  "metrics": {
+   "synthetic_songs_unseen_voices_and_artists": {
+    "a cappella": {
+     "exact": 0.823,
+     "tol20ms": 0.8907,
+     "voiced_exact": 0.77,
+     "voice_f1": 0.9713,
+     "speech_model_before": {
+      "exact": 0.7126,
+      "tol20ms": 0.7935,
+      "voiced_exact": 0.6111
+     }
+    },
+    "voice +6 dB": {
+     "exact": 0.7353,
+     "tol20ms": 0.809,
+     "voiced_exact": 0.6501,
+     "mouth_still_on_beat": 0.9392,
+     "voice_f1": 0.9359,
+     "speech_model_before": {
+      "exact": 0.3675,
+      "tol20ms": 0.4824,
+      "voiced_exact": 0.4433,
+      "mouth_still_on_beat": 0.1862
+     }
+    },
+    "voice 0 dB": {
+     "exact": 0.6611,
+     "tol20ms": 0.7383,
+     "voiced_exact": 0.5472,
+     "mouth_still_on_beat": 0.9336,
+     "voice_f1": 0.9097,
+     "speech_model_before": {
+      "exact": 0.2947,
+      "tol20ms": 0.4067,
+      "voiced_exact": 0.3557,
+      "mouth_still_on_beat": 0.1487
+     }
+    },
+    "voice -6 dB": {
+     "exact": 0.564,
+     "tol20ms": 0.6347,
+     "voiced_exact": 0.4106,
+     "mouth_still_on_beat": 0.9311,
+     "voice_f1": 0.863,
+     "speech_model_before": {
+      "exact": 0.2236,
+      "tol20ms": 0.3305,
+      "voiced_exact": 0.2641,
+      "mouth_still_on_beat": 0.1266
+     }
+    }
+   },
+   "real_songs_unseen_artists": {
+    "clips": 92,
+    "voice_f1": 0.8285,
+    "voice_precision": 0.8341,
+    "voice_recall": 0.8231,
+    "mouth_agrees_with_isolated_voice": 0.3879,
+    "mouth_still_when_no_voice": 0.9456,
+    "singing_start_error_s_median": 0.14
+   },
+   "test_songs": {
+    "clips": 1,
+    "voice_f1": 0.9088,
+    "voice_precision": 0.942,
+    "voice_recall": 0.8778,
+    "mouth_agrees_with_isolated_voice": 0.3732,
+    "mouth_still_when_no_voice": 0.9276,
+    "singing_start_error_s_median": 0.17
+   }
+  },
+  "best_step": 30120,
+  "env": {
+   "python": "3.13.16",
+   "torch": "2.11.0+cu130",
+   "cuda": true,
+   "gpu": "Tesla T4"
+  }
+ },
+ "tensors": {
+  "mel_fb": {
+   "dtype": "f32",
+   "shape": [
+    80,
+    257
+   ],
+   "offset": 0
+  },
+  "feat_mean": {
+   "dtype": "f32",
+   "shape": [
+    80
+   ],
+   "offset": 82240
+  },
+  "feat_std": {
+   "dtype": "f32",
+   "shape": [
+    80
+   ],
+   "offset": 82560
+  },
+  "inp.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    80,
+    3
+   ],
+   "offset": 82880
+  },
+  "inp.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 205760
+  },
+  "b0.conv.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128,
+    3
+   ],
+   "offset": 206272
+  },
+  "b0.conv.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 402880
+  },
+  "b0.pw.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128
+   ],
+   "offset": 403392
+  },
+  "b0.pw.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 468928
+  },
+  "b1.conv.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128,
+    3
+   ],
+   "offset": 469440
+  },
+  "b1.conv.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 666048
+  },
+  "b1.pw.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128
+   ],
+   "offset": 666560
+  },
+  "b1.pw.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 732096
+  },
+  "b2.conv.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128,
+    3
+   ],
+   "offset": 732608
+  },
+  "b2.conv.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 929216
+  },
+  "b2.pw.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128
+   ],
+   "offset": 929728
+  },
+  "b2.pw.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 995264
+  },
+  "b3.conv.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128,
+    3
+   ],
+   "offset": 995776
+  },
+  "b3.conv.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 1192384
+  },
+  "b3.pw.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128
+   ],
+   "offset": 1192896
+  },
+  "b3.pw.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 1258432
+  },
+  "b4.conv.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128,
+    3
+   ],
+   "offset": 1258944
+  },
+  "b4.conv.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 1455552
+  },
+  "b4.pw.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128
+   ],
+   "offset": 1456064
+  },
+  "b4.pw.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 1521600
+  },
+  "b5.conv.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128,
+    3
+   ],
+   "offset": 1522112
+  },
+  "b5.conv.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 1718720
+  },
+  "b5.pw.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128
+   ],
+   "offset": 1719232
+  },
+  "b5.pw.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 1784768
+  },
+  "b6.conv.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128,
+    3
+   ],
+   "offset": 1785280
+  },
+  "b6.conv.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 1981888
+  },
+  "b6.pw.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128
+   ],
+   "offset": 1982400
+  },
+  "b6.pw.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 2047936
+  },
+  "b7.conv.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128,
+    3
+   ],
+   "offset": 2048448
+  },
+  "b7.conv.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 2245056
+  },
+  "b7.pw.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128
+   ],
+   "offset": 2245568
+  },
+  "b7.pw.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 2311104
+  },
+  "b8.conv.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128,
+    3
+   ],
+   "offset": 2311616
+  },
+  "b8.conv.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 2508224
+  },
+  "b8.pw.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128
+   ],
+   "offset": 2508736
+  },
+  "b8.pw.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 2574272
+  },
+  "b9.conv.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128,
+    3
+   ],
+   "offset": 2574784
+  },
+  "b9.conv.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 2771392
+  },
+  "b9.pw.w": {
+   "dtype": "f32",
+   "shape": [
+    128,
+    128
+   ],
+   "offset": 2771904
+  },
+  "b9.pw.b": {
+   "dtype": "f32",
+   "shape": [
+    128
+   ],
+   "offset": 2837440
+  },
+  "vis.w": {
+   "dtype": "f32",
+   "shape": [
+    15,
+    128
+   ],
+   "offset": 2837952
+  },
+  "vis.b": {
+   "dtype": "f32",
+   "shape": [
+    15
+   ],
+   "offset": 2845632
+  },
+  "ph.w": {
+   "dtype": "f32",
+   "shape": [
+    40,
+    128
+   ],
+   "offset": 2845692
+  },
+  "ph.b": {
+   "dtype": "f32",
+   "shape": [
+    40
+   ],
+   "offset": 2866172
+  },
+  "voc.w": {
+   "dtype": "f32",
+   "shape": [
+    1,
+    128
+   ],
+   "offset": 2866332
+  },
+  "voc.b": {
+   "dtype": "f32",
+   "shape": [
+    1
+   ],
+   "offset": 2866844
+  }
+ }
+}

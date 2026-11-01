@@ -6,7 +6,7 @@
 //   3. Behaviour: blinks, micro-saccades, gaze, breathing, speech nods & brow flashes
 //   4. Gestures: laugh, wink, nod, smirk, blush
 
-import { VISEMES } from "./text.js?v=20261031b";
+import { VISEMES } from "./text.js?v=20261101h";
 
 const NS = "http://www.w3.org/2000/svg";
 const el = (tag, attrs = {}, parent) => {
@@ -142,6 +142,9 @@ export class Face {
     this.flash = 0;        // brow flash impulse (emphasis)
     this.nodImpulse = 0;   // head nod impulse (stressed syllables)
     this.saccadeNext = 0.5;
+    this.bob = { x: 0, v: 0 };      // bouncy head bob (under-damped spring) driven by the beat
+    this.squash = 0;               // squash impulse on strong beats
+    this.sing = S(0, 4);           // 0..1 "soulful" held-note look (eyes soften, brows lift)
     this.speechEnergy = 0;
     this.mouthTarget = { ...VISEME_SHAPES.sil };
     this.mouthGain = 1;
@@ -218,6 +221,15 @@ export class Face {
   setMouth(shape, gain = 1) { this.mouthTarget = shape; this.mouthGain = gain; }
   lookAtScreen(nx, ny) { this.mouse = { x: nx, y: ny, t: this.time }; }
   emphasis(k = 1) { this.flash = Math.min(1.2, this.flash + 0.7 * k); this.nodImpulse = Math.min(1.5, this.nodImpulse + 0.6 * k); }
+  /** A musical beat: the head dips and bounces back (cartoon squash & stretch). k: 0..1 */
+  beat(k = 1) {
+    this.bob.v += 34 * k;
+    this.squash = Math.min(1, this.squash + 0.7 * k);
+    this.swayDir = -(this.swayDir || 1);              // groove: lean left, right, left…
+    this.swayT = this.swayDir * 3.2 * k;
+  }
+  /** 0..1 — how much she is "feeling" a held note: softened eyes, lifted inner brows, a tilt. */
+  setSinging(level) { this.sing.t = clamp(level, 0, 1); }
   gesture(name) {
     if (name === "wink") this.wink = 0;
     else if (name === "laugh") this.laughT = 0;
@@ -267,6 +279,15 @@ export class Face {
     this.nodImpulse *= Math.exp(-dt * 7);
     ex.browY += 3.2 * this.flash;
     ex.headNod += 2.2 * this.nodImpulse;
+    // singing: held notes soften the eyes and lift the inner brows
+    const sg = this.sing.step(dt);
+    ex.lidU -= 0.42 * sg; ex.lidL += 0.12 * sg; ex.browIn += 4 * sg; ex.browY += 1.5 * sg; ex.headTilt += 4 * sg;
+    // beat bounce: under-damped spring (ω 16 rad/s, ζ 0.32) → dip, overshoot, settle
+    { const w = 16, z = 0.32, b = this.bob;
+      b.v += (-w * w * b.x - 2 * z * w * b.v) * dt; b.x += b.v * dt; }
+    this.squash *= Math.exp(-dt * 9);
+    this.swayT = (this.swayT || 0) * Math.exp(-dt * 1.5);
+    ex.headTilt += this.swayT;
     if (this.state === "listening") ex.headNod += 1.5 * this.listeningLevel;
     for (const k of EXPR_KEYS) { this.x[k].t = ex[k]; this.x[k].step(dt); }
     const X = Object.fromEntries(EXPR_KEYS.map((k) => [k, this.x[k].v]));
@@ -328,8 +349,13 @@ export class Face {
   // ── drawing ─────────────────────────────────────────────────
   _render(X, M, blinkClose) {
     const breath = Math.sin(this.time * 1.6) * 1.2;
+    // cartoon squash & stretch: the face stretches as the jaw opens, squashes on a beat
+    const openN = clamp(M.open / 17, 0, 1.3);
+    const sy = 1 + 0.04 * openN - 0.035 * this.squash - 0.01 * clamp(M.press, 0, 1);
+    const sx = 1 / Math.sqrt(sy);
     this.headG.setAttribute("transform",
-      `translate(${f1(this.head.x.v)} ${f1(this.head.nod.v * 0.6 + breath)}) rotate(${f1(this.head.tilt.v)} 110 205)`);
+      `translate(${f1(this.head.x.v)} ${f1(this.head.nod.v * 0.6 + breath + this.bob.x * 0.55)}) rotate(${f1(this.head.tilt.v)} 110 205) ` +
+      `translate(110 210) scale(${sx.toFixed(4)} ${sy.toFixed(4)}) translate(-110 -210)`);
 
     // cheeks
     const cheekY = 124 - X.cheek;

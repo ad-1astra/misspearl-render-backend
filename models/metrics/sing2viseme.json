@@ -1,0 +1,274 @@
+{
+  "synthetic_songs_unseen_voices_and_artists": {
+    "a cappella": {
+      "exact": 0.823,
+      "tol20ms": 0.8907,
+      "voiced_exact": 0.77,
+      "voice_f1": 0.9713,
+      "speech_model_before": {
+        "exact": 0.7126,
+        "tol20ms": 0.7935,
+        "voiced_exact": 0.6111
+      }
+    },
+    "voice +6 dB": {
+      "exact": 0.7353,
+      "tol20ms": 0.809,
+      "voiced_exact": 0.6501,
+      "mouth_still_on_beat": 0.9392,
+      "voice_f1": 0.9359,
+      "speech_model_before": {
+        "exact": 0.3675,
+        "tol20ms": 0.4824,
+        "voiced_exact": 0.4433,
+        "mouth_still_on_beat": 0.1862
+      }
+    },
+    "voice 0 dB": {
+      "exact": 0.6611,
+      "tol20ms": 0.7383,
+      "voiced_exact": 0.5472,
+      "mouth_still_on_beat": 0.9336,
+      "voice_f1": 0.9097,
+      "speech_model_before": {
+        "exact": 0.2947,
+        "tol20ms": 0.4067,
+        "voiced_exact": 0.3557,
+        "mouth_still_on_beat": 0.1487
+      }
+    },
+    "voice -6 dB": {
+      "exact": 0.564,
+      "tol20ms": 0.6347,
+      "voiced_exact": 0.4106,
+      "mouth_still_on_beat": 0.9311,
+      "voice_f1": 0.863,
+      "speech_model_before": {
+        "exact": 0.2236,
+        "tol20ms": 0.3305,
+        "voiced_exact": 0.2641,
+        "mouth_still_on_beat": 0.1266
+      }
+    }
+  },
+  "real_songs_unseen_artists": {
+    "clips": 92,
+    "voice_f1": 0.8285,
+    "voice_precision": 0.8341,
+    "voice_recall": 0.8231,
+    "mouth_agrees_with_isolated_voice": 0.3879,
+    "mouth_still_when_no_voice": 0.9456,
+    "singing_start_error_s_median": 0.14
+  },
+  "test_songs": {
+    "clips": 1,
+    "voice_f1": 0.9088,
+    "voice_precision": 0.942,
+    "voice_recall": 0.8778,
+    "mouth_agrees_with_isolated_voice": 0.3732,
+    "mouth_still_when_no_voice": 0.9276,
+    "singing_start_error_s_median": 0.17
+  },
+  "history": [
+    {
+      "step": 2384,
+      "min": 3.0,
+      "loss": 3.0684,
+      "lr": 0.002498,
+      "score": 1.455,
+      "a cappella": 0.7831,
+      "voice +6 dB": 0.7078,
+      "voice 0 dB": 0.6477,
+      "voice -6 dB": 0.563,
+      "voice_f1_0db": 0.8896,
+      "real_voice_f1": 0.6649
+    },
+    {
+      "step": 4900,
+      "min": 6.0,
+      "loss": 2.8549,
+      "lr": 0.002454,
+      "score": 1.5279,
+      "a cappella": 0.8275,
+      "voice +6 dB": 0.7497,
+      "voice 0 dB": 0.6844,
+      "voice -6 dB": 0.593,
+      "voice_f1_0db": 0.8928,
+      "real_voice_f1": 0.7289
+    },
+    {
+      "step": 7419,
+      "min": 9.0,
+      "loss": 2.3326,
+      "lr": 0.002352,
+      "score": 1.5055,
+      "a cappella": 0.8515,
+      "voice +6 dB": 0.7678,
+      "voice 0 dB": 0.6947,
+      "voice -6 dB": 0.5958,
+      "voice_f1_0db": 0.8892,
+      "real_voice_f1": 0.6593
+    },
+    {
+      "step": 9938,
+      "min": 12.0,
+      "loss": 2.6349,
+      "lr": 0.002199,
+      "score": 1.556,
+      "a cappella": 0.87,
+      "voice +6 dB": 0.7759,
+      "voice 0 dB": 0.7057,
+      "voice -6 dB": 0.6044,
+      "voice_f1_0db": 0.8975,
+      "real_voice_f1": 0.7329
+    },
+    {
+      "step": 12463,
+      "min": 15.0,
+      "loss": 2.4358,
+      "lr": 0.002,
+      "score": 1.5406,
+      "a cappella": 0.8646,
+      "voice +6 dB": 0.7833,
+      "voice 0 dB": 0.713,
+      "voice -6 dB": 0.6109,
+      "voice_f1_0db": 0.8971,
+      "real_voice_f1": 0.6879
+    },
+    {
+      "step": 14985,
+      "min": 18.0,
+      "loss": 2.2464,
+      "lr": 0.001767,
+      "score": 1.5339,
+      "a cappella": 0.8698,
+      "voice +6 dB": 0.7795,
+      "voice 0 dB": 0.7123,
+      "voice -6 dB": 0.6128,
+      "voice_f1_0db": 0.9041,
+      "real_voice_f1": 0.6719
+    },
+    {
+      "step": 17505,
+      "min": 21.0,
+      "loss": 2.3006,
+      "lr": 0.00151,
+      "score": 1.5685,
+      "a cappella": 0.872,
+      "voice +6 dB": 0.7904,
+      "voice 0 dB": 0.7184,
+      "voice -6 dB": 0.6134,
+      "voice_f1_0db": 0.9056,
+      "real_voice_f1": 0.7227
+    },
+    {
+      "step": 20027,
+      "min": 24.0,
+      "loss": 2.663,
+      "lr": 0.001241,
+      "score": 1.5748,
+      "a cappella": 0.8859,
+      "voice +6 dB": 0.805,
+      "voice 0 dB": 0.731,
+      "voice -6 dB": 0.6259,
+      "voice_f1_0db": 0.906,
+      "real_voice_f1": 0.7076
+    },
+    {
+      "step": 22550,
+      "min": 27.0,
+      "loss": 2.1822,
+      "lr": 0.000974,
+      "score": 1.5738,
+      "a cappella": 0.8857,
+      "voice +6 dB": 0.7964,
+      "voice 0 dB": 0.7278,
+      "voice -6 dB": 0.6322,
+      "voice_f1_0db": 0.9095,
+      "real_voice_f1": 0.7139
+    },
+    {
+      "step": 25070,
+      "min": 30.0,
+      "loss": 2.0644,
+      "lr": 0.000722,
+      "score": 1.5711,
+      "a cappella": 0.8869,
+      "voice +6 dB": 0.7998,
+      "voice 0 dB": 0.7303,
+      "voice -6 dB": 0.6322,
+      "voice_f1_0db": 0.906,
+      "real_voice_f1": 0.7061
+    },
+    {
+      "step": 27598,
+      "min": 33.0,
+      "loss": 2.5855,
+      "lr": 0.000496,
+      "score": 1.5865,
+      "a cappella": 0.8866,
+      "voice +6 dB": 0.8052,
+      "voice 0 dB": 0.7352,
+      "voice -6 dB": 0.6366,
+      "voice_f1_0db": 0.9127,
+      "real_voice_f1": 0.72
+    },
+    {
+      "step": 30120,
+      "min": 36.0,
+      "loss": 2.1163,
+      "lr": 0.000308,
+      "score": 1.5976,
+      "a cappella": 0.8907,
+      "voice +6 dB": 0.809,
+      "voice 0 dB": 0.7383,
+      "voice -6 dB": 0.6347,
+      "voice_f1_0db": 0.9097,
+      "real_voice_f1": 0.7382
+    },
+    {
+      "step": 32645,
+      "min": 39.0,
+      "loss": 2.4088,
+      "lr": 0.000167,
+      "score": 1.589,
+      "a cappella": 0.8886,
+      "voice +6 dB": 0.8104,
+      "voice 0 dB": 0.7362,
+      "voice -6 dB": 0.6365,
+      "voice_f1_0db": 0.9136,
+      "real_voice_f1": 0.7178
+    },
+    {
+      "step": 35173,
+      "min": 42.0,
+      "loss": 2.037,
+      "lr": 8e-05,
+      "score": 1.5933,
+      "a cappella": 0.8933,
+      "voice +6 dB": 0.8106,
+      "voice 0 dB": 0.7377,
+      "voice -6 dB": 0.6366,
+      "voice_f1_0db": 0.9105,
+      "real_voice_f1": 0.7278
+    },
+    {
+      "step": 37690,
+      "min": 45.0,
+      "loss": 2.1286,
+      "lr": 5e-05,
+      "score": 1.5944,
+      "a cappella": 0.8925,
+      "voice +6 dB": 0.8123,
+      "voice 0 dB": 0.7402,
+      "voice -6 dB": 0.6402,
+      "voice_f1_0db": 0.9118,
+      "real_voice_f1": 0.7244
+    }
+  ],
+  "params": 701368,
+  "sung_hours_train": 4.82,
+  "speech_hours_train": 4.73,
+  "music_hours": 8.8,
+  "real_voice_fraction": 0.449
+}

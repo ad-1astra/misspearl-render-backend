@@ -1,7 +1,7 @@
 // Verifies that the browser runtime (pearl/*.js) reproduces the trained models
 // exactly, using the reference vectors the Python trainers export.
 //   node tests/verify_models.mjs [models_dir] [vectors_dir]
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Audio2Viseme, EmotionModel, G2P, parseModel } from "../pearl/nn.js";
 import { FeatureExtractor } from "../pearl/audio.js";
@@ -41,6 +41,35 @@ const check = (name, ok, detail) => { console.log(`${ok ? "PASS" : "FAIL"}  ${na
     if (best === tv.argmax[t]) agree++;
   }
   check("audio→viseme logits", ld < 5e-2 && agree / T > 0.99, `max |Δlogit| = ${ld.toExponential(2)}, argmax agreement ${(100 * agree / T).toFixed(1)}%, ${T} frames in ${ms.toFixed(0)} ms (${(T / 100 / (ms / 1000)).toFixed(0)}× realtime)`);
+}
+
+// ── song model: visemes of the singing voice + voice activity ──
+if (existsSync(join(M, "sing2viseme.json")) && existsSync(join(V, "sing2viseme_test.json"))) {
+  const sing = new Audio2Viseme(load("sing2viseme"));
+  const tv = JSON.parse(readFileSync(join(V, "sing2viseme_test.json"), "utf8"));
+  const pcm = Float32Array.from(tv.pcm16, (v) => v / 32768);
+  const fx = new FeatureExtractor(sing.featureConfig);
+  const f = fx.compute(pcm);
+  let fd = 0;
+  tv.feats_norm_first5.forEach((row, m) => row.forEach((v, t) => { fd = Math.max(fd, Math.abs(f.data[m * f.T + t] - v)); }));
+  check("song log-mel features", fd < 2e-3, `max |Δ| = ${fd.toExponential(2)}, ${sing.cfg.n_mels} mels × ${f.T} frames`);
+  const t0 = performance.now();
+  const out = sing.forward(f.data, f.T);
+  const ms = performance.now() - t0;
+  const T = f.T, nv = sing.visemes.length;
+  let ld = 0, vd = 0, agree = 0;
+  for (let t = 0; t < T; t++) {
+    let best = 0, rbest = 0;
+    for (let k = 0; k < nv; k++) {
+      ld = Math.max(ld, Math.abs(out.vis[k * T + t] - tv.vis_logits[k][t]));
+      if (out.vis[k * T + t] > out.vis[best * T + t]) best = k;
+      if (tv.vis_logits[k][t] > tv.vis_logits[rbest][t]) rbest = k;
+    }
+    vd = Math.max(vd, Math.abs(out.voc[t] - tv.voc_logits[t]));
+    if (best === rbest) agree++;
+  }
+  check("song model logits", ld < 5e-2 && vd < 5e-2 && agree / T > 0.99,
+    `viseme max |Δ| ${ld.toExponential(2)}, voice max |Δ| ${vd.toExponential(2)}, argmax ${(100 * agree / T).toFixed(1)}%, ${T} frames in ${ms.toFixed(0)} ms (${(T / 100 / (ms / 1000)).toFixed(0)}× realtime)`);
 }
 
 // ── G2P ──
