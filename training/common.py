@@ -130,12 +130,12 @@ def logmel_torch(wave, fb, window, lowpass_bins=None):
     return torch.log(mel + LOG_EPS).transpose(1, 2)
 
 
-def logmel_numpy(wave: np.ndarray) -> np.ndarray:
+def logmel_numpy(wave: np.ndarray, n_mels: int = N_MELS) -> np.ndarray:
     """Reference implementation used for JS test vectors. -> [n_mels, T]"""
-    fb = mel_filterbank()
+    fb = mel_filterbank(n_mels=n_mels)
     win = hann_window()
     T = num_frames(len(wave))
-    out = np.zeros((N_MELS, T), dtype=np.float32)
+    out = np.zeros((n_mels, T), dtype=np.float32)
     for t in range(T):
         seg = wave[t * HOP: t * HOP + WIN].astype(np.float64) * win
         spec = np.fft.rfft(seg, n=N_FFT)
@@ -149,7 +149,7 @@ def logmel_numpy(wave: np.ndarray) -> np.ndarray:
 # ─────────────────────────────────────────────────────────────
 
 def build_audio_model(n_mels=N_MELS, channels=80, dilations=(1, 2, 4, 8, 1, 2, 4, 8),
-                      n_vis=len(VISEMES), n_ph=len(AUX_PHONES), dropout=0.1):
+                      n_vis=len(VISEMES), n_ph=len(AUX_PHONES), dropout=0.1, voice_head=False):
     import torch
     import torch.nn as nn
 
@@ -175,16 +175,22 @@ def build_audio_model(n_mels=N_MELS, channels=80, dilations=(1, 2, 4, 8, 1, 2, 4
             super().__init__()
             self.cfg = dict(n_mels=n_mels, channels=channels, dilations=list(dilations),
                             n_vis=n_vis, n_ph=n_ph)
+            if voice_head:
+                self.cfg["voice_head"] = True
             self.inp = nn.Conv1d(n_mels, channels, 3, padding=1)
             self.bn0 = nn.BatchNorm1d(channels)
             self.blocks = nn.ModuleList([Block(channels, d) for d in dilations])
             self.vis = nn.Conv1d(channels, n_vis, 1)
             self.ph = nn.Conv1d(channels, n_ph, 1)
+            # singing model: "is a voice singing/speaking right now?" (vs. only music)
+            self.voc = nn.Conv1d(channels, 1, 1) if voice_head else None
 
         def forward(self, x):            # x: [B, n_mels, T] (normalised)
             x = torch.relu(self.bn0(self.inp(x)))
             for b in self.blocks:
                 x = b(x)
+            if self.voc is not None:
+                return self.vis(x), self.ph(x), self.voc(x)[:, 0]
             return self.vis(x), self.ph(x)
 
     return Audio2Viseme()
