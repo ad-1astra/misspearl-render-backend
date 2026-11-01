@@ -46,7 +46,7 @@ def save(local_dir, drive_dir, marker):
 BASE = '/content/drive/MyDrive/MissPearl-LipSync'
 try:
     from google.colab import drive
-    drive.mount('/content/drive')
+    drive.mount('/content/drive', timeout_ms=90000)
     os.makedirs(BASE, exist_ok=True)
     print('✅ Google Drive connected →', BASE)
 except Exception as e:
@@ -62,12 +62,7 @@ os.environ['PYTHONUNBUFFERED'] = '1'"""),
 if not os.path.exists('/content/mp/.git'):
     run('git clone -q https://github.com/ad-1astra/misspearl-render-backend.git /content/mp')
 %run -i /content/mp/training/colab_setup.py
-tv = subprocess.run([KPY, '-c', 'import torch; print(torch.__version__.split("+")[0])'], capture_output=True, text=True).stdout.strip()
-if os.path.realpath(KPY) != os.path.realpath(sys.executable):
-    run(f'uv pip install -q --python {KPY} demucs "torchaudio=={tv}" pyarrow huggingface_hub')
-else:
-    run('pip install -q demucs pyarrow huggingface_hub')
-run(f'{KPY} -c "import demucs.pretrained, demucs.apply; print(\\'demucs ready\\')"')"""),
+%run -i /content/mp/training/colab_setup_singing.py"""),
     (CODE, """#@title 4 · A song to test on (optional — tested on, never trained on)
 AUDIO_EXT = ('.mp3', '.wav', '.m4a', '.flac', '.ogg', '.aac')
 songs = [f for f in os.listdir(TEST) if f.lower().endswith(AUDIO_EXT)]
@@ -83,7 +78,7 @@ print('test songs:', os.listdir(TEST))"""),
     (CODE, """#@title 5 · Real songs → voice + instrumental stems with Demucs (runs in the background, ≈25 min)
 restore(f'{BASE}/music', '/content/music', 'index.json')
 music_log = open('/content/music.log', 'w')
-music_proc = subprocess.Popen(f'{KPY} {T}/gen_song_data.py music --out /content/music --shards 0,1 --test-dir "{TEST}"',
+music_proc = subprocess.Popen(f'{DPY} {T}/gen_song_data.py music --out /content/music --shards 0,1 --test-dir "{TEST}"',
                               shell=True, stdout=music_log, stderr=subprocess.STDOUT)
 print('music preparation started, pid', music_proc.pid)"""),
     (CODE, """#@title 6 · The spoken corpus (from the first notebook, or rebuilt ≈20 min)

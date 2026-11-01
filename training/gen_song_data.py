@@ -228,8 +228,9 @@ class Separator:
 
 
 def cmd_music(args):
-    _relaunch_in_kokoro_env()        # demucs is installed next to Kokoro
-    from scipy.signal import resample_poly
+    # Demucs checkpoints are full pickles from Meta's own server; torch ≥2.6 loads weights-only by default
+    os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
+    from scipy.signal import resample_poly      # runs in the Demucs python (see colab_setup_singing.py)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     sep = None
