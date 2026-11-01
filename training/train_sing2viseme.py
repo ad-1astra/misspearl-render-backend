@@ -400,11 +400,11 @@ def main():
         return res
 
     @torch.no_grad()
-    def evaluate_real(mus, vads, softs, which):
+    def evaluate_real(mus, vads, softs, which, limit=None):
         """Real songs: voice detection vs. the Demucs vocal stem; mouth shapes vs. the teacher on that stem."""
         if not mus:
             return None
-        ids = [i for i, c in enumerate(mus["clips"]) if which == "all" or c.get("val")]
+        ids = [i for i, c in enumerate(mus["clips"]) if which == "all" or c.get("val")][:limit]
         tp = fp = fn = 0
         agree = n_agree = 0
         onset = []
@@ -451,7 +451,8 @@ def main():
     B_real = max(1, B // 4)
     B_syn = B - B_real
     t_start = time.time()
-    eval_every = 10 if args.smoke else 400
+    eval_every_s = 5 if args.smoke else 180          # evaluate every ~3 minutes of training
+    last_eval = time.time()
     while not skip:
         frac = (time.time() - t_start) / total_s
         if frac >= 1:
@@ -486,9 +487,10 @@ def main():
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 2.0)
         opt.step()
-        if step % eval_every == 0:
+        if time.time() - last_eval >= eval_every_s or (time.time() - t_start) >= total_s:
+            last_eval = time.time()
             ev = evaluate_synth()
-            rv = evaluate_real(music, real_vad, real_soft, "val")
+            rv = evaluate_real(music, real_vad, real_soft, "val", limit=40)
             score = 0.5 * (ev["voice 0 dB"]["tol20ms"] + ev["voice +6 dB"]["tol20ms"]) + \
                 0.5 * ev["voice 0 dB"]["voice_f1"] + 0.5 * (rv["voice_f1"] if rv else 0)
             history.append({"step": step, "min": round((time.time() - t_start) / 60, 1), "loss": round(float(loss), 4),
